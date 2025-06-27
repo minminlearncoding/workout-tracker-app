@@ -1,20 +1,18 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'; // 引入 useCallback
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Plus, Dumbbell, Calendar, TrendingUp, Timer, Save, Trash2, Play, Pause, RotateCcw, ChevronLeft, ChevronRight, BarChart3, Search, Edit, Info } from 'lucide-react';
+import { BrowserRouter as Router, Routes, Route, Link, useNavigate } from 'react-router-dom'; // 引入路由相關組件和 Hook
 
 // Firebase 相關引入
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, doc, setDoc, addDoc, getDocs, onSnapshot, query, deleteDoc } from 'firebase/firestore'; // 移除 'where'
+import { getFirestore, collection, doc, setDoc, addDoc, getDocs, onSnapshot, query, deleteDoc } from 'firebase/firestore';
 
 // 確保在本地開發環境中 '__app_id', '__firebase_config', '__initial_auth_token' 被定義
-// 這些變數由 Canvas 環境在運行時提供，本地構建時需要備用值
-// 注意：這些僅用於本地編譯通過。在 Canvas 外部運行時，實際的 Firebase 配置需要手動提供。
-// 我們將這些定義從元件內部移到最外層，以避免 'used before defined' 警告，同時確保它們的全局性行為
 const canvasAppId = typeof window !== 'undefined' && typeof window.__app_id !== 'undefined' ? window.__app_id : 'default-app-id-for-local';
 const canvasFirebaseConfig = typeof window !== 'undefined' && typeof window.__firebase_config !== 'undefined' ? JSON.parse(window.__firebase_config) : {};
 const canvasInitialAuthToken = typeof window !== 'undefined' && typeof window.__initial_auth_token !== 'undefined' ? window.__initial_auth_token : null;
 
-// ⭐ 修正：將預設數據定義為組件外部的常量，這樣它們就永遠不會改變，也就不需要作為 useEffect 的依賴 ⭐
+// 將預設數據定義為組件外部的常量
 const DEFAULT_EXERCISES_DATA = [
   { id: 'ex_default_1', name: '槓鈴臥推', category: '胸部', muscle: 'chest', description: '上半身力量訓練的經典動作，主要訓練胸大肌、三頭肌和三角肌前束。', equipmentSuggestions: '槓鈴、臥推椅', freeWeightInstructions: '躺臥在臥推椅上，雙手握住槓鈴略寬於肩，慢慢放下槓鈴至胸部，然後推回起始位置。核心收緊，背部微弓。' },
   { id: 'ex_default_2', name: '啞鈴臥推', category: '胸部', muscle: 'chest', description: '與槓鈴臥推類似，但啞鈴提供更大的運動範圍和單邊訓練的好處。', equipmentSuggestions: '啞鈴、臥推椅', freeWeightInstructions: '每手持一啞鈴，躺臥在臥推椅上，手心相對或向前，緩慢下放啞鈴至胸部外側，然後向上推起啞鈴，啞鈴之間不需接觸。' },
@@ -50,7 +48,6 @@ const DEFAULT_EXERCISES_DATA = [
 
 const DEFAULT_WORKOUT_PLANS_DATA = [
   {
-    // 注意: 預設計劃的 ID 不再是數字，而是字串，與 Firestore 的 document ID 保持一致
     id: 'plan_default_1', 
     name: '全身訓練 A (範例)',
     exercises: [
@@ -65,59 +62,49 @@ const DEFAULT_WORKOUT_PLANS_DATA = [
 ];
 
 
-const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
-
+const App = () => {
   // Firebase 實例和使用者 ID 狀態
   const [db, setDb] = useState(null);
-  // ⭐ 修正：移除 authInstance 狀態變數，直接使用局部變數 auth ⭐
-  // const [authInstance, setAuthInstance] = useState(null); 
   const [userId, setUserId] = useState(null);
-  const [isAuthReady, setIsAuthReady] = useState(false); // 標記 Firebase Auth 是否準備就緒
+  const [isAuthReady, setIsAuthReady] = useState(false);
 
   // Canvas 環境提供的應用程式 ID (用於 Firestore 路徑)
-  // 注意：在 Canvas 外部部署時，如果您的 Firestore 安全規則依賴於特定的 appId，
-  // 您需要將 'default-app-id' 替換為您 Firebase 規則中設定的實際 appId (例如 Canvas 專案的 ID)
-  // 這裡使用外部定義的 canvasAppId
   const appId = canvasAppId === 'default-app-id-for-local' ? 'workout-tracker-netlify-app' : canvasAppId;
 
-  // UI 頁面導航狀態
-  const [currentPage, setCurrentPage] = useState('daily');
-
   // 資料狀態
-  const [workoutData, setWorkoutData] = useState([]); // 實際完成的訓練記錄
-  const [exercises, setExercises] = useState([]); // 動作列表 (預設 + 自訂)
-  const [workoutPlans, setWorkoutPlans] = useState([]); // 訓練計劃
-  const [bodyStats, setBodyStats] = useState([]); // 身體數據
+  const [workoutData, setWorkoutData] = useState([]);
+  const [exercises, setExercises] = useState([]);
+  const [workoutPlans, setWorkoutPlans] = useState([]);
+  const [bodyStats, setBodyStats] = useState([]);
 
-  // 計時器狀態
-  const [timerSeconds, setTimerSeconds] = useState(90); // 總設定時間
-  const [isTimerRunning, setIsTimerRunning] = useState(false); // 計時器是否運行
-  const [timerDisplay, setTimerDisplay] = useState(90); // 實際顯示的時間
-  const timerIntervalRef = useRef(null); // 用於儲存計時器 Interval ID
+  // 計時器狀態 (現在只管理計時邏輯，不再決定頁面顯示)
+  const [timerSeconds, setTimerSeconds] = useState(90);
+  const [isTimerRunning, setIsTimerRunning] = useState(false);
+  const [timerDisplay, setTimerDisplay] = useState(90);
+  const timerIntervalRef = useRef(null);
 
   // 今日訓練狀態
   const [todayWorkout, setTodayWorkout] = useState([]);
-  const [selectedExercise, setSelectedExercise] = useState(''); // 儲存手動新增訓練時選擇的動作ID
+  const [selectedExercise, setSelectedExercise] = useState('');
   const [weight, setWeight] = useState('');
   const [sets, setSets] = useState('');
   const [reps, setReps] = useState('');
-  const [selectedWorkoutPlan, setSelectedWorkoutPlan] = useState(''); // 儲存從計劃載入時選擇的計劃ID
-  const [selectedCategory, setSelectedCategory] = useState(''); // 篩選動作的部位
-  const [showHistory, setShowHistory] = useState(false); // 控制是否顯示今日訓練歷史記錄
+  const [selectedWorkoutPlan, setSelectedWorkoutPlan] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('');
+  const [showHistory, setShowHistory] = useState(false);
 
   // 自訂動作狀態
   const [newExerciseName, setNewExerciseName] = useState('');
   const [newExerciseCategory, setNewExerciseCategory] = useState('');
-  // 新增動作詳細資訊輸入框
   const [newExerciseDescription, setNewExerciseDescription] = useState('');
   const [newExerciseEquipment, setNewExerciseEquipment] = useState('');
   const [newExerciseFreeWeight, setNewExerciseFreeWeight] = useState('');
 
   // 訓練計劃創建與編輯狀態
-  const [planName, setPlanName] = useState(''); // 新計劃名稱
-  const [selectedPlanExercises, setSelectedPlanExercises] = useState([]); // 新計劃中選擇的動作ID列表
-  const [editingPlan, setEditingPlan] = useState(null); // 儲存正在編輯的計劃對象，null 表示沒有編輯中的計劃
-  const [planSearchQuery, setPlanSearchQuery] = useState(''); // 搜尋訓練計劃的關鍵字
+  const [planName, setPlanName] = useState('');
+  const [selectedPlanExercises, setSelectedPlanExercises] = useState([]);
+  const [editingPlan, setEditingPlan] = useState(null);
+  const [planSearchQuery, setPlanSearchQuery] = useState('');
 
   // 身體數據狀態
   const [bodyWeight, setBodyWeight] = useState('');
@@ -126,42 +113,37 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
   const [bodyFatPercent, setBodyFatPercent] = useState('');
 
   // 統計視圖狀態
-  const [statsView, setStatsView] = useState('week'); // week, month, year
+  const [statsView, setStatsView] = useState('week');
 
   // 自定義提示框狀態
   const [showAlert, setShowAlert] = useState(false);
   const [alertMessage, setAlertMessage] = useState('');
-  // 將 alertId 從狀態中移除，它沒有被有效使用，或者可以整合到 alertMessage 中
-  // const [alertId, setAlertId] = useState('');
 
   // 訓練動作詳情和編輯狀態
-  const [viewingExerciseDetails, setViewingExerciseDetails] = useState(null); // 儲存正在查看詳情的動作
-  const [editingExercise, setEditingExercise] = useState(null); // 儲存正在編輯的動作
+  const [viewingExerciseDetails, setViewingExerciseDetails] = useState(null);
+  const [editingExercise, setEditingExercise] = useState(null);
+
+  // 路由導航 Hook
+  const navigate = useNavigate();
 
   // 顯示自定義提示框 (使用 useCallback 優化)
   const showCustomAlert = useCallback((message, id = '') => {
     setAlertMessage(message);
-    // 如果需要區分不同的提示，可以將 id 包含在 message 中或在其他地方使用
-    // setAlertId(id); // 如果不需要，可以註釋掉此行以消除警告
     setShowAlert(true);
-    // 自動關閉提示框
     setTimeout(() => {
       setShowAlert(false);
       setAlertMessage('');
-      // setAlertId(''); // 同步移除
     }, 3000);
-  }, []); // 空依賴陣列表示這個函數只創建一次
+  }, []);
 
   // Firebase 初始化和身份驗證
   useEffect(() => {
     let firebaseConfigToUse = null;
 
-    // 優先從 Canvas 環境載入配置
     if (Object.keys(canvasFirebaseConfig).length > 0) {
         firebaseConfigToUse = canvasFirebaseConfig;
         console.log("Using Firebase config from Canvas environment.");
     } else {
-        // 如果沒有從 Canvas 載入，則使用用戶手動填寫的配置
         firebaseConfigToUse = {
             apiKey: "AIzaSyAFYByFw1XPghJYPofGg-punSt6gfSgR00",
             authDomain: "workouttrackerapp-3d241.firebaseapp.com",
@@ -169,12 +151,10 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
             storageBucket: "workouttrackerapp-3d241.firebasestorage.app",
             messagingSenderId: "846450892613",
             appId: "1:846450892613:web:0e02e86ab853f8e443282c",
-            // measurementId: "YOUR_MEASUREMENT_ID" // 可選，如果您的專案有啟用 Google Analytics
         };
         
-        // 再次檢查是否還是預設的 placeholder 值（即使已替換為您的值，這裡仍檢查以避免未替換的情況）
         if (!firebaseConfigToUse.apiKey || 
-            firebaseConfigToUse.apiKey === "YOUR_API_KEY" || // 以防萬一，再次檢查
+            firebaseConfigToUse.apiKey === "YOUR_API_KEY" || 
             firebaseConfigToUse.authDomain === "YOUR_AUTH_DOMAIN" || 
             firebaseConfigToUse.projectId === "YOUR_PROJECT_ID" || 
             firebaseConfigToUse.appId === "YOUR_APP_ID") {
@@ -182,45 +162,39 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
             console.error("Firebase config is still using placeholder values or is incomplete. Using local storage as fallback.");
             showCustomAlert('Firebase 配置無效，請填寫您的專案配置。將使用本地儲存。');
             setIsAuthReady(true);
-            setExercises(DEFAULT_EXERCISES_DATA); // ⭐ 修正：使用全局常量 ⭐
-            setWorkoutPlans(DEFAULT_WORKOUT_PLANS_DATA); // ⭐ 修正：使用全局常量 ⭐
+            setExercises(DEFAULT_EXERCISES_DATA);
+            setWorkoutPlans(DEFAULT_WORKOUT_PLANS_DATA);
             return;
         }
         console.log("Using explicit Firebase config for non-Canvas environment.");
     }
 
-    // 初始化 Firebase
     const app = initializeApp(firebaseConfigToUse);
-    setDb(getFirestore(app)); // ⭐ 修正：直接將 getFirestore(app) 的結果設置到 db 狀態中 ⭐
+    setDb(getFirestore(app));
 
-    const auth = getAuth(app); // 使用局部變數 auth
-    // ⭐ 修正：移除 setAuthInstance(auth); 這一行 ⭐
+    const auth = getAuth(app);
 
     const authenticate = async () => {
       try {
-        // 使用 Canvas 環境提供的初始認證令牌，如果沒有則匿名登入
-        // 注意：在 Canvas 外部部署時，canvasInitialAuthToken 為 null，會自動匿名登入
         if (canvasInitialAuthToken) {
-          await signInWithCustomToken(auth, canvasInitialAuthToken); // ⭐ 使用局部變數 auth ⭐
+          await signInWithCustomToken(auth, canvasInitialAuthToken);
           console.log("Signed in with custom token.");
         } else {
-          await signInAnonymously(auth); // ⭐ 使用局部變數 auth ⭐
+          await signInAnonymously(auth);
           console.log("Signed in anonymously.");
         }
       } catch (error) {
         console.error("Error during Firebase authentication:", error);
         showCustomAlert('Firebase 認證失敗，將使用本地儲存。');
-        setExercises(DEFAULT_EXERCISES_DATA); // ⭐ 修正：使用全局常量 ⭐
-        setWorkoutPlans(DEFAULT_WORKOUT_PLANS_DATA); // ⭐ 修正：使用全局常量 ⭐
+        setExercises(DEFAULT_EXERCISES_DATA);
+        setWorkoutPlans(DEFAULT_WORKOUT_PLANS_DATA);
       } finally {
-        setIsAuthReady(true); // 標記為認證流程完成
+        setIsAuthReady(true);
       }
     };
 
     authenticate();
 
-    // 監聽身份驗證狀態變化
-    // ⭐ 修正：onAuthStateChanged 的回調函數的依賴應該是 auth 這個局部變數 ⭐
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => { 
       if (user) {
         setUserId(user.uid);
@@ -234,44 +208,37 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
     return () => {
       if (unsubscribeAuth) unsubscribeAuth();
     };
-  }, [appId, showCustomAlert]); // ⭐ 修正：移除了 canvasInitialAuthToken 依賴 ⭐
+  }, [appId, showCustomAlert]);
 
   // 資料載入 (從 Firestore 或使用預設值)
   useEffect(() => {
-    // 只有當 Firebase 和用戶 ID 都準備好時才執行數據載入
     if (!isAuthReady || !db || !userId) {
-      // 如果沒有 Firebase 配置，則已在上面的 useEffect 中設定了本地數據
       return;
     }
 
     const loadDataFromFirestore = async () => {
       console.log(`Loading data for user: ${userId}, app: ${appId}`);
 
-      // 載入 Exercises
       const exercisesRef = collection(db, `artifacts/${appId}/users/${userId}/exercises`);
       const exercisesSnap = await getDocs(exercisesRef);
       if (exercisesSnap.empty) {
-        // 如果 Firestore 中沒有 exercises，載入預設值並保存到 Firestore
-        setExercises(DEFAULT_EXERCISES_DATA); // ⭐ 修正：使用全局常量 ⭐
+        setExercises(DEFAULT_EXERCISES_DATA);
         console.log("Loaded default exercises.");
-        for (const ex of DEFAULT_EXERCISES_DATA) { // ⭐ 修正：使用全局常量 ⭐
-          // 使用 setDoc 並指定自訂 ID，以避免每次重新整理都生成新文檔
+        for (const ex of DEFAULT_EXERCISES_DATA) {
           await setDoc(doc(exercisesRef, ex.id), ex); 
         }
         console.log("Saved default exercises to Firestore.");
       } else {
-        setExercises(exercisesSnap.docs.map(doc => ({ ...doc.data(), id: doc.id }))); // Firestore ID 是字串
+        setExercises(exercisesSnap.docs.map(doc => ({ ...doc.data(), id: doc.id })));
         console.log("Loaded exercises from Firestore.");
       }
 
-      // 載入 Workout Plans
       const plansRef = collection(db, `artifacts/${appId}/users/${userId}/workoutPlans`);
       const plansSnap = await getDocs(plansRef);
       if (plansSnap.empty) {
-        setWorkoutPlans(DEFAULT_WORKOUT_PLANS_DATA); // ⭐ 修正：使用全局常量 ⭐
+        setWorkoutPlans(DEFAULT_WORKOUT_PLANS_DATA);
         console.log("Loaded default workout plans.");
-        for (const plan of DEFAULT_WORKOUT_PLANS_DATA) { // ⭐ 修正：使用全局常量 ⭐
-          // 使用 setDoc 並指定自訂 ID
+        for (const plan of DEFAULT_WORKOUT_PLANS_DATA) {
           await setDoc(doc(plansRef, plan.id), plan);
         }
         console.log("Saved default workout plans to Firestore.");
@@ -280,13 +247,11 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
         console.log("Loaded workout plans from Firestore.");
       }
 
-      // 載入 Workout Data (歷史訓練記錄)
       const workoutDataRef = collection(db, `artifacts/${appId}/users/${userId}/workoutData`);
       const workoutDataSnap = await getDocs(workoutDataRef);
       setWorkoutData(workoutDataSnap.docs.map(doc => ({ ...doc.data(), id: doc.id })));
       console.log("Loaded workout data from Firestore.");
 
-      // 載入 Body Stats
       const bodyStatsRef = collection(db, `artifacts/${appId}/users/${userId}/bodyStats`);
       const bodyStatsSnap = await getDocs(bodyStatsRef);
       setBodyStats(bodyStatsSnap.docs.map(doc => ({ ...doc.data(), id: doc.id })));
@@ -295,26 +260,22 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
 
     loadDataFromFirestore();
 
-    // 設定即時監聽 (onSnapshot)，以確保數據實時更新
-    // 監聽 exercises
+    // 設定即時監聽 (onSnapshot)
     const exercisesQuery = query(collection(db, `artifacts/${appId}/users/${userId}/exercises`));
     const unsubscribeExercises = onSnapshot(exercisesQuery, (snapshot) => {
       setExercises(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
     }, (error) => console.error("Error listening to exercises:", error));
 
-    // 監聽 workoutPlans
     const plansQuery = query(collection(db, `artifacts/${appId}/users/${userId}/workoutPlans`));
     const unsubscribePlans = onSnapshot(plansQuery, (snapshot) => {
       setWorkoutPlans(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
     }, (error) => console.error("Error listening to workout plans:", error));
 
-    // 監聽 workoutData
     const workoutDataQuery = query(collection(db, `artifacts/${appId}/users/${userId}/workoutData`));
     const unsubscribeWorkoutData = onSnapshot(workoutDataQuery, (snapshot) => {
       setWorkoutData(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
     }, (error) => console.error("Error listening to workout data:", error));
 
-    // 監聽 bodyStats
     const bodyStatsQuery = query(collection(db, `artifacts/${appId}/users/${userId}/bodyStats`));
     const unsubscribeBodyStats = onSnapshot(bodyStatsQuery, (snapshot) => {
       setBodyStats(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
@@ -326,7 +287,7 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
       unsubscribeWorkoutData();
       unsubscribeBodyStats();
     };
-  }, [isAuthReady, db, userId, appId]); // 依賴項是正確的
+  }, [isAuthReady, db, userId, appId]);
 
   // 計時器效果
   useEffect(() => {
@@ -339,9 +300,8 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
       clearInterval(timerIntervalRef.current);
       showCustomAlert('休息時間結束！', 'timer-end');
     }
-    // 當 isTimerRunning 或 timerDisplay 改變時，清除舊的 Interval
     return () => clearInterval(timerIntervalRef.current);
-  }, [isTimerRunning, timerDisplay, showCustomAlert]); // 新增 showCustomAlert 到依賴陣列
+  }, [isTimerRunning, timerDisplay, showCustomAlert]);
 
   // 格式化時間顯示
   const formatTime = (seconds) => {
@@ -352,7 +312,6 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
 
   // 添加今日訓練記錄 (本地操作)
   const addTodayWorkout = () => {
-    // 這裡的 selectedExercise 是 Firebase 文檔 ID (字串)
     const exercise = exercises.find(ex => ex.id === selectedExercise); 
     if (!exercise) {
       showCustomAlert('未找到選定的訓練動作或欄位未填寫！', 'exercise-not-found');
@@ -365,7 +324,7 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
 
     const newRecord = {
       date: new Date().toLocaleDateString('zh-TW'),
-      exerciseId: selectedExercise, // 儲存 Firebase 文檔 ID (字串)
+      exerciseId: selectedExercise,
       exerciseName: exercise.name,
       category: exercise.category,
       muscle: exercise.muscle,
@@ -375,7 +334,6 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
       completed: false
     };
     
-    // 將新記錄添加到今日訓練的暫存列表 (不是直接保存到 Firestore)
     setTodayWorkout(prev => [...prev, newRecord]);
     
     setSelectedExercise('');
@@ -399,9 +357,9 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
     }
     
     const planWorkouts = plan.exercises.map(exercise => ({
-      id: Date.now() + Math.random(), // 臨時前端 ID，用於列表鍵值
+      id: Date.now() + Math.random(),
       date: new Date().toLocaleDateString('zh-TW'),
-      exerciseId: exercise.id, // 動作的 Firebase 文檔 ID (字串)
+      exerciseId: exercise.id,
       exerciseName: exercise.name,
       category: exercise.category,
       muscle: exercise.muscle,
@@ -445,7 +403,7 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
     }
     
     const exercisesInPlan = todayWorkout.map(w => ({
-      id: w.exerciseId, // 使用動作的 Firebase 文檔 ID (字串)
+      id: w.exerciseId,
       name: w.exerciseName,
       category: w.category,
       muscle: w.muscle,
@@ -485,11 +443,11 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
 
     try {
       for (const workout of completedWorkouts) {
-        const { id, ...dataToSave } = workout; // 移除臨時前端 ID
+        const { id, ...dataToSave } = workout;
         await addDoc(collection(db, `artifacts/${appId}/users/${userId}/workoutData`), dataToSave);
       }
       showCustomAlert('今日訓練已儲存！', 'today-workout-saved');
-      setTodayWorkout([]); // 清空今日訓練列表
+      setTodayWorkout([]);
     } catch (e) {
       console.error("Error saving today's workout: ", e);
       showCustomAlert('儲存今日訓練失敗！', 'save-workout-fail');
@@ -551,7 +509,6 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
   // 刪除動作 (從 Firestore)
   const deleteExercise = async (exerciseId) => {
     if (!db || !userId) { showCustomAlert('資料庫未準備好或用戶未登入。', 'db-not-ready'); return; }
-    // 使用自訂訊息框而非 window.confirm
     const confirmDelete = window.confirm("確定要刪除此動作嗎？此操作不可逆！"); 
     if (!confirmDelete) {
       return;
@@ -559,8 +516,8 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
     try {
       await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/exercises`, exerciseId));
       showCustomAlert('動作已刪除！', 'exercise-deleted');
-      setViewingExerciseDetails(null); // 如果正在查看該動作，關閉詳情
-      setEditingExercise(null); // 如果正在編輯該動作，關閉編輯
+      setViewingExerciseDetails(null);
+      setEditingExercise(null);
     } catch (e) {
       console.error("Error deleting exercise: ", e);
       showCustomAlert('刪除動作失敗！', 'delete-exercise-fail');
@@ -577,8 +534,8 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
     try {
       await setDoc(doc(db, `artifacts/${appId}/users/${userId}/exercises`, updatedExercise.id), updatedExercise);
       showCustomAlert('動作已更新！', 'exercise-updated');
-      setEditingExercise(null); // 關閉編輯模式
-      setViewingExerciseDetails(updatedExercise); // 更新詳細資訊頁面
+      setEditingExercise(null);
+      setViewingExerciseDetails(updatedExercise);
     } catch (e) {
       console.error("Error updating exercise: ", e);
       showCustomAlert('更新動作失敗！', 'update-exercise-fail');
@@ -596,7 +553,7 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
     const exercisesForPlan = selectedPlanExercises.map(id => {
       const exercise = exercises.find(ex => ex.id === id);
       return {
-        id: exercise.id, // 使用動作的 Firebase 文檔 ID (字串)
+        id: exercise.id,
         name: exercise.name,
         category: exercise.category,
         muscle: exercise.muscle,
@@ -634,10 +591,9 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
     }
 
     try {
-      // 確保內部 exercise 的 id 仍然是字串（Firebase 文檔 ID）
       const exercisesToSave = updatedPlan.exercises.map(ex => ({
         ...ex,
-        id: String(ex.id) // 確保 ID 是字串
+        id: String(ex.id)
       }));
       
       const planRef = doc(db, `artifacts/${appId}/users/${userId}/workoutPlans`, updatedPlan.id);
@@ -700,7 +656,6 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
     
     const filteredData = workoutData.filter(record => {
       const parts = record.date.split('/');
-      // 確保日期格式正確，這裡假設為YYYY/MM/DD
       let recordDate;
       if (parts.length === 3) {
           recordDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
@@ -739,42 +694,49 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
   const stats = getStats();
 
   // 渲染底部導航欄
-  const renderBottomNav = () => (
-    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2 shadow-lg z-10">
-      <div className="flex justify-around">
-        {[
-          { key: 'daily', icon: Calendar, label: '今日訓練' },
-          { key: 'exercises', icon: Dumbbell, label: '訓練動作' },
-          { key: 'plans', icon: BarChart3, label: '訓練計劃' },
-          { key: 'progress', icon: TrendingUp, label: '進度追蹤' },
-          { key: 'timer', icon: Timer, label: '計時器' }
-        ].map(({ key, icon: Icon, label }) => (
-          <button
-            key={key}
-            onClick={() => {
-              setCurrentPage(key);
-              setEditingPlan(null);
-              setPlanSearchQuery('');
-              setSelectedCategory('');
-              setViewingExerciseDetails(null); // 切換頁面時關閉動作詳情
-              setEditingExercise(null); // 切換頁面時關閉動作編輯
-            }}
-            className={`flex flex-col items-center py-2 px-3 rounded-lg transition-colors duration-200 ${
-              currentPage === key 
-                ? 'text-blue-600 bg-blue-50' 
-                : 'text-gray-600 hover:bg-gray-100'
-            }`}
-          >
-            <Icon size={20} />
-            <span className="text-xs mt-1 font-medium">{label}</span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
+  const renderBottomNav = () => {
+    // 使用 useNavigate 鉤子獲取當前路徑
+    const navigateTo = useNavigate(); 
+    const currentPath = window.location.pathname; // 直接從 window.location 獲取當前路徑
 
-  // 渲染今日訓練頁面
-  const renderDailyWorkout = () => (
+    return (
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2 shadow-lg z-10">
+        <div className="flex justify-around">
+          {[
+            { path: '/', icon: Calendar, label: '今日訓練' }, // 首頁路徑
+            { path: '/exercises', icon: Dumbbell, label: '訓練動作' },
+            { path: '/plans', icon: BarChart3, label: '訓練計劃' },
+            { path: '/progress', icon: TrendingUp, label: '進度追蹤' },
+            { path: '/timer', icon: Timer, label: '計時器' }
+          ].map(({ path, icon: Icon, label }) => (
+            <Link // 使用 Link 組件
+              key={path}
+              to={path}
+              onClick={() => {
+                // 清除相關的編輯/搜尋狀態，以便頁面切換後是乾淨的
+                setEditingPlan(null);
+                setPlanSearchQuery('');
+                setSelectedCategory('');
+                setViewingExerciseDetails(null);
+                setEditingExercise(null);
+              }}
+              className={`flex flex-col items-center py-2 px-3 rounded-lg transition-colors duration-200 ${
+                currentPath === path // 根據 currentPath 判斷 active 狀態
+                  ? 'text-blue-600 bg-blue-50' 
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              <Icon size={20} />
+              <span className="text-xs mt-1 font-medium">{label}</span>
+            </Link>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  // 將各頁面內容作為獨立組件或函數定義
+  const DailyWorkout = () => (
     <div className="p-4 pb-20">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-800">今日訓練記錄</h1>
@@ -788,7 +750,6 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
       </div>
 
       {showHistory ? (
-        // 歷史記錄頁面
         <div className="space-y-4">
           <div className="flex items-center gap-2 mb-4">
             <button
@@ -832,9 +793,7 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
           )}
         </div>
       ) : (
-        // 主要訓練頁面
         <>
-          {/* 選擇訓練計劃 */}
           <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-gray-100">
             <h2 className="text-lg font-semibold mb-4 text-gray-800">載入訓練計劃</h2>
             <div className="flex flex-col sm:flex-row gap-3">
@@ -860,12 +819,10 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
             </div>
           </div>
 
-          {/* 手動新增訓練 */}
           <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-gray-100">
             <h2 className="text-lg font-semibold mb-4 text-gray-800">手動新增訓練</h2>
             
             <div className="space-y-4">
-              {/* 部位選擇 */}
               <select
                 className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 value={selectedCategory}
@@ -880,7 +837,6 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
                 ))}
               </select>
 
-              {/* 動作選擇 */}
               <select
                 className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 value={selectedExercise}
@@ -932,7 +888,6 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
             </div>
           </div>
           
-          {/* 今日訓練列表 */}
           {todayWorkout.length > 0 && (
             <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-gray-100">
               <div className="flex justify-between items-center mb-4">
@@ -1028,12 +983,10 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
     </div>
   );
 
-  // 渲染訓練動作頁面
-  const renderExercises = () => (
+  const ExercisesPage = () => (
     <div className="p-4 pb-20">
       <h1 className="text-2xl font-bold text-gray-800 mb-6">訓練動作管理</h1>
       
-      {/* 如果正在查看或編輯動作詳情，則顯示相應的介面 */}
       {viewingExerciseDetails || editingExercise ? (
         <div className="fixed inset-0 bg-white bg-opacity-95 z-50 p-6 overflow-y-auto">
           <div className="flex items-center justify-between mb-6 border-b pb-4 sticky top-0 bg-white z-10">
@@ -1058,7 +1011,7 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
                 <Save size={20} /> 儲存
               </button>
             ) : (
-              viewingExerciseDetails && ( // 只有在查看詳情時才顯示編輯按鈕
+              viewingExerciseDetails && (
                 <button 
                   onClick={() => setEditingExercise(viewingExerciseDetails)} 
                   className="text-blue-600 font-semibold px-4 py-2 rounded-lg bg-blue-100 hover:bg-blue-200 transition-colors flex items-center gap-1"
@@ -1070,7 +1023,6 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
           </div>
 
           {editingExercise ? (
-            // 編輯動作介面
             <div className="space-y-4 pt-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">動作名稱</label>
@@ -1128,7 +1080,6 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
               </div>
             </div>
           ) : (
-            // 動作詳情介面
             viewingExerciseDetails && (
             <div className="space-y-4 pt-4 text-gray-800">
               <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
@@ -1157,7 +1108,6 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
         </div>
       ) : (
         <>
-          {/* 新增自訂動作 */}
           <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-gray-100">
             <h2 className="text-lg font-semibold mb-4 text-gray-800">新增自訂動作</h2>
             
@@ -1216,10 +1166,8 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
             </div>
           </div>
           
-          {/* 動作列表 */}
           <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-gray-100">
             <h2 className="text-lg font-semibold mb-4 text-gray-800">所有訓練動作</h2>
-            {/* 部位篩選選單 */}
             <div className="mb-4">
               <label htmlFor="exercise-filter-category" className="block text-sm font-medium text-gray-700 mb-2">
                 篩選部位
@@ -1244,7 +1192,7 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
                   .map(category => (
                   <div key={category} className="bg-gray-50 rounded-lg p-4 border border-gray-100">
                     <h3 className="text-md font-semibold mb-3 text-gray-800">{category}</h3>
-                    <div className="grid grid-cols-1 gap-2"> {/* Changed to col-1 for better layout with buttons */}
+                    <div className="grid grid-cols-1 gap-2">
                       {exercises.filter(ex => ex.category === category).map(exercise => (
                         <div key={exercise.id} className="bg-white p-3 rounded-lg shadow-sm flex justify-between items-center">
                           <span className="text-gray-800 font-medium">{exercise.name}</span>
@@ -1289,12 +1237,10 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
     </div>
   );
 
-  // 渲染訓練計劃頁面
-  const renderPlans = () => (
+  const PlansPage = () => (
     <div className="p-4 pb-20">
       <h1 className="text-2xl font-bold text-gray-800 mb-6">訓練計劃</h1>
       
-      {/* 創建新計劃 */}
       <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-gray-100">
         <h2 className="text-lg font-semibold mb-4 text-gray-800">創建新計劃</h2>
         
@@ -1307,7 +1253,6 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
             onChange={(e) => setPlanName(e.target.value)}
           />
           
-          {/* 篩選動作的部位選單 */}
           <div className="mb-2">
             <label htmlFor="plan-creation-category-select" className="block text-sm font-medium text-gray-700 mb-2">
               篩選動作部位
@@ -1362,11 +1307,9 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
         </div>
       </div>
       
-      {/* 已創建的計劃列表 */}
       <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-gray-100">
         <h2 className="text-lg font-semibold mb-4 text-gray-800">我的訓練計劃</h2>
         
-        {/* 搜尋歷史計劃 */}
         <div className="relative mb-4">
           <input
             type="text"
@@ -1414,7 +1357,6 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
         </div>
       </div>
 
-      {/* 編輯計劃介面 (Modal-like) */}
       {editingPlan && (
         <div className="fixed inset-0 bg-white bg-opacity-95 z-50 p-6 overflow-y-auto">
           <div className="flex items-center justify-between mb-6 border-b pb-4 sticky top-0 bg-white z-10">
@@ -1512,11 +1454,9 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
                 </div>
               </div>
             ))}
-            {/* 新增動作到編輯中的計劃 */}
             <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-gray-100">
               <h3 className="text-lg font-semibold mb-4 text-gray-800">新增動作到此計劃</h3>
               <div className="space-y-4">
-                {/* 篩選動作的部位選單 */}
                 <div className="mb-2">
                   <label htmlFor="edit-plan-add-exercise-category" className="block text-sm font-medium text-gray-700 mb-2">
                     篩選動作部位
@@ -1542,7 +1482,6 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
                     <p className="text-center text-gray-500">該部位暫無動作可供選擇。</p>
                   ) : (
                     getFilteredExercises()
-                      // 篩選掉已在計劃中的動作
                       .filter(ex => !editingPlan.exercises.some(planEx => planEx.id === ex.id)) 
                       .map(exercise => (
                         <label key={exercise.id} className="flex items-center gap-2 py-1 cursor-pointer hover:bg-gray-100 rounded-md px-2">
@@ -1577,12 +1516,10 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
     </div>
   );
 
-  // 渲染進度追蹤頁面
-  const renderProgress = () => (
+  const ProgressPage = () => (
     <div className="p-4 pb-20">
       <h1 className="text-2xl font-bold text-gray-800 mb-6">進度追蹤</h1>
       
-      {/* 身體數據輸入 */}
       <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-gray-100">
         <h2 className="text-lg font-semibold mb-4 text-gray-800">記錄身體數據</h2>
         
@@ -1631,7 +1568,6 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
         </button>
       </div>
       
-      {/* 統計視圖切換 */}
       <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-gray-100">
         <div className="flex justify-center mb-4">
           <div className="bg-gray-100 rounded-lg p-1 flex">
@@ -1655,7 +1591,6 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
           </div>
         </div>
         
-        {/* 統計數據顯示 */}
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div className="bg-blue-50 p-4 rounded-lg text-center border border-blue-100">
             <div className="text-2xl font-bold text-blue-600">{stats.workoutDays}</div>
@@ -1667,7 +1602,6 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
           </div>
         </div>
         
-        {/* 部位訓練統計 */}
         <h3 className="text-lg font-semibold mb-3 text-gray-800">部位訓練統計 (總組數)</h3>
         {Object.entries(stats.categoryStats).length === 0 && (
           <div className="text-center text-gray-500 mt-5">
@@ -1686,7 +1620,6 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
         </div>
       </div>
       
-      {/* 身體數據歷史 */}
       {bodyStats.length > 0 && (
         <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
           <h3 className="text-lg font-semibold mb-3 text-gray-800">身體數據記錄</h3>
@@ -1722,13 +1655,11 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
     </div>
   );
 
-  // 渲染計時器頁面
-  const renderTimer = () => (
+  const TimerPage = () => (
     <div className="p-4 pb-20">
       <h1 className="text-2xl font-bold text-gray-800 mb-6">組間計時器</h1>
       
       <div className="bg-white rounded-xl shadow-lg p-8 text-center border border-gray-100">
-        {/* 時間設定滑動條 */}
         <div className="mb-8">
           <label className="block text-sm font-medium text-gray-700 mb-2">
             設定休息時間
@@ -1739,9 +1670,9 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
             </span>
             <input
               type="range"
-              min="15" // 最小15秒
-              max="360" // 最大6分鐘 (360秒)
-              step="5" // 每5秒一個步進
+              min="15"
+              max="360"
+              step="5"
               value={timerSeconds}
               onChange={(e) => {
                 if (!isTimerRunning) {
@@ -1759,7 +1690,6 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
           </div>
         </div>
         
-        {/* 計時器顯示 */}
         <div className="mb-8">
           <div className={`text-6xl font-bold mb-4 transition-colors duration-500 ${
             timerDisplay <= 10 && timerDisplay > 0 ? 'text-red-500 animate-pulse' : 'text-blue-600'
@@ -1767,7 +1697,6 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
             {formatTime(timerDisplay)}
           </div>
           
-          {/* 進度條 */}
           <div className="w-full bg-gray-200 rounded-full h-2 mb-6">
             <div 
               className={`h-2 rounded-full transition-all duration-1000 ease-linear ${
@@ -1778,7 +1707,6 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
           </div>
         </div>
         
-        {/* 控制按鈕 */}
         <div className="flex justify-center gap-4">
           <button
             onClick={() => {
@@ -1806,11 +1734,10 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
           </button>
         </div>
         
-        {/* 快速設定按鈕 */}
         <div className="mt-8">
           <div className="text-sm text-gray-600 mb-3">快速設定</div>
           <div className="flex justify-center gap-2 flex-wrap">
-            {[30, 60, 90, 120, 180, 240, 300].map(seconds => ( // 新增30秒選項
+            {[30, 60, 90, 120, 180, 240, 300].map(seconds => (
               <button
                 key={seconds}
                 onClick={() => {
@@ -1832,28 +1759,32 @@ const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 font-sans">
-      {/* 主要內容區域 */}
-      <div className="max-w-md mx-auto bg-white min-h-screen shadow-xl relative">
-        {/* 頁面內容 */}
-        {currentPage === 'daily' && renderDailyWorkout()}
-        {currentPage === 'exercises' && renderExercises()}
-        {currentPage === 'plans' && renderPlans()}
-        {currentPage === 'progress' && renderProgress()}
-        {currentPage === 'timer' && renderTimer()}
-        
-        {/* 底部導航 */}
-        {renderBottomNav()}
+    <Router> {/* 整個應用程式包裹在 Router 中 */}
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 font-sans">
+        <div className="max-w-md mx-auto bg-white min-h-screen shadow-xl relative">
+          <Routes> {/* 定義路由 */}
+            <Route path="/" element={<DailyWorkout />} />
+            <Route path="/exercises" element={<ExercisesPage />} />
+            <Route path="/plans" element={<PlansPage />} />
+            <Route path="/progress" element={<ProgressPage />} />
+            <Route path="/timer" element={<TimerPage />} />
+            {/* 可以添加一個 404 頁面，如果需要 */}
+            <Route path="*" element={<div className="p-4 text-center text-red-500 text-lg font-bold">404 - 找不到頁面</div>} />
+          </Routes>
+          
+          {/* 底部導航欄，現在將作為組件呼叫 */}
+          {renderBottomNav()} 
 
-        {/* 自定義提示框 */}
-        {showAlert && (
-          <div className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-5 py-3 rounded-lg shadow-xl text-center z-50 animate-fade-in-up">
-            {alertMessage}
-          </div>
-        )}
+          {/* 自定義提示框 */}
+          {showAlert && (
+            <div className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-5 py-3 rounded-lg shadow-xl text-center z-50 animate-fade-in-up">
+              {alertMessage}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </Router>
   );
 };
 
-export default App; // 導出元件名稱為 App
+export default App;
