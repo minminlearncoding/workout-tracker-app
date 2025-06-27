@@ -1,20 +1,84 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Dumbbell, Calendar, TrendingUp, Timer, Save, Trash2, Play, Pause, RotateCcw, ChevronLeft, ChevronRight, BarChart3, Search, Edit, Info } from 'lucide-react'; // 引入 Edit 和 Info 圖標
+import React, { useState, useEffect, useRef, useCallback } from 'react'; // 引入 useCallback
+import { Plus, Dumbbell, Calendar, TrendingUp, Timer, Save, Trash2, Play, Pause, RotateCcw, ChevronLeft, ChevronRight, BarChart3, Search, Edit, Info } from 'lucide-react';
 
 // Firebase 相關引入
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, doc, setDoc, addDoc, getDocs, onSnapshot, query, where, deleteDoc } from 'firebase/firestore';
+import { getFirestore, collection, doc, setDoc, addDoc, getDocs, onSnapshot, query, deleteDoc } from 'firebase/firestore'; // 移除 'where'
 
-const App = () => {
+// 確保在本地開發環境中 '__app_id', '__firebase_config', '__initial_auth_token' 被定義
+// 這些變數由 Canvas 環境在運行時提供，本地構建時需要備用值
+// 注意：這些僅用於本地編譯通過。在 Canvas 外部運行時，實際的 Firebase 配置需要手動提供。
+// 我們將這些定義從元件內部移到最外層，以避免 'used before defined' 警告，同時確保它們的全局性行為
+const canvasAppId = typeof window !== 'undefined' && typeof window.__app_id !== 'undefined' ? window.__app_id : 'default-app-id-for-local';
+const canvasFirebaseConfig = typeof window !== 'undefined' && typeof window.__firebase_config !== 'undefined' ? JSON.parse(window.__firebase_config) : {};
+const canvasInitialAuthToken = typeof window !== 'undefined' && typeof window.__initial_auth_token !== 'undefined' ? window.__initial_auth_token : null;
+
+// ⭐ 修正：將預設數據定義為組件外部的常量，這樣它們就永遠不會改變，也就不需要作為 useEffect 的依賴 ⭐
+const DEFAULT_EXERCISES_DATA = [
+  { id: 'ex_default_1', name: '槓鈴臥推', category: '胸部', muscle: 'chest', description: '上半身力量訓練的經典動作，主要訓練胸大肌、三頭肌和三角肌前束。', equipmentSuggestions: '槓鈴、臥推椅', freeWeightInstructions: '躺臥在臥推椅上，雙手握住槓鈴略寬於肩，慢慢放下槓鈴至胸部，然後推回起始位置。核心收緊，背部微弓。' },
+  { id: 'ex_default_2', name: '啞鈴臥推', category: '胸部', muscle: 'chest', description: '與槓鈴臥推類似，但啞鈴提供更大的運動範圍和單邊訓練的好處。', equipmentSuggestions: '啞鈴、臥推椅', freeWeightInstructions: '每手持一啞鈴，躺臥在臥推椅上，手心相對或向前，緩慢下放啞鈴至胸部外側，然後向上推起啞鈴，啞鈴之間不需接觸。' },
+  { id: 'ex_default_3', name: '上斜臥推', category: '胸部', muscle: 'chest', description: '針對胸大肌上部，有助於塑造飽滿胸型。', equipmentSuggestions: '槓鈴/啞鈴、上斜臥推椅', freeWeightInstructions: '調整臥推椅為約30-45度上斜角，動作類似平板臥推，但著重於胸部上緣的發力。' },
+  { id: 'ex_default_4', name: '飛鳥', category: '胸部', muscle: 'chest', description: '孤立訓練胸大肌，主要作用是胸部的內收和擠壓。', equipmentSuggestions: '啞鈴/繩索機', freeWeightInstructions: '雙臂微彎，向內擠壓啞鈴或手柄，感受胸部肌肉收縮。' },
+  { id: 'ex_default_5', name: '雙槓撐體', category: '胸部', muscle: 'chest', description: '自體重量訓練，全面鍛鍊胸部、三頭肌和肩部。', equipmentSuggestions: '雙槓', freeWeightInstructions: '雙手握住雙槓，身體下放直到胸部與槓平行或略低，然後推起身體回到起始位置。身體可微前傾以更刺激胸部。' },
+  { id: 'ex_default_6', name: '引體向上', category: '背部', muscle: 'back', description: '經典背部肌肉自體重量訓練，主要訓練背闊肌和二頭肌。', equipmentSuggestions: '單槓', freeWeightInstructions: '雙手寬握單槓，身體向上拉起直到下巴超過單槓，然後緩慢放下身體。保持身體穩定，避免擺動。' },
+  { id: 'ex_default_7', name: '槓鈴划船', category: '背部', muscle: 'back', description: '有效增加背部厚度的複合動作，訓練背闊肌、斜方肌、菱形肌。', equipmentSuggestions: '槓鈴', freeWeightInstructions: '雙腳與肩同寬站立，屈髖俯身，背部挺直，雙手握住槓鈴，將槓鈴拉向腹部，感受背部肌肉收縮，然後緩慢放下。' },
+  { id: 'ex_default_8', name: '啞鈴划船', category: '背部', muscle: 'back', description: '單邊訓練，有助於改善左右肌力不平衡，更孤立地刺激背部肌肉。', equipmentSuggestions: '啞鈴、長凳', freeWeightInstructions: '單膝跪於長凳上，一手扶住長凳支撐，另一手持啞鈴，將啞鈴拉向腰部，感受背部收縮。' },
+  { id: 'ex_default_9', name: '滑輪下拉', category: '背部', muscle: 'back', description: '利用器械模擬引體向上動作，適合不同肌力水平的使用者。', equipmentSuggestions: '滑輪下拉機', freeWeightInstructions: '坐在器械上，雙手寬握把手，將把手拉向胸部上方，感受背闊肌的伸展和收縮。' },
+  { id: 'ex_default_10', name: '硬舉', category: '背部', muscle: 'back', description: '全身性複合動作，強健背部、腿部和核心肌群。', equipmentSuggestions: '槓鈴', freeWeightInstructions: '雙腳與髖同寬站立，俯身握住槓鈴，保持背部挺直，利用臀部和腿部力量將槓鈴從地面提起，直到身體直立，然後緩慢放下。' },
+  { id: 'ex_default_11', name: '肩推', category: '肩膀', muscle: 'shoulders', description: '針對三角肌前束和中束的複合動作，有效增加肩部力量。', equipmentSuggestions: '槓鈴/啞鈴、推舉椅', freeWeightInstructions: '坐姿或站姿，雙手握住槓鈴或啞鈴，從肩部位置向上推舉至手臂伸直，然後緩慢下放。' },
+  { id: 'ex_default_12', name: '側平舉', category: '肩膀', muscle: 'shoulders', description: '孤立訓練三角肌中束，是增加肩部寬度的關鍵動作。', equipmentSuggestions: '啞鈴', freeWeightInstructions: '每手持一啞鈴，雙臂微彎，將啞鈴向身體兩側抬起，直到手臂與肩平行，感受肩部中束的收縮。' },
+  { id: 'ex_default_13', name: '前平舉', category: '肩膀', 'muscle': 'shoulders', description: '孤立訓練三角肌前束。', equipmentSuggestions: '啞鈴', freeWeightInstructions: '每手持一啞鈴，雙臂伸直，將啞鈴向前上方抬起，直到手臂與肩平行。' },
+  { id: 'ex_default_14', name: '後束飛鳥', category: '肩膀', muscle: 'shoulders', description: '訓練三角肌後束，有助於改善圓肩和平衡肩部發展。', equipmentSuggestions: '啞鈴/繩索機', freeWeightInstructions: '俯身或坐在器械上，雙臂微彎，向身體兩側後方打開手臂，感受肩部後束的收縮。' },
+  { id: 'ex_default_15', name: '聳肩', category: '肩膀', muscle: 'shoulders', description: '主要訓練斜方肌上部。', equipmentSuggestions: '啞鈴/槓鈴', freeWeightInstructions: '雙手持啞鈴或槓鈴，雙肩向上聳起，盡量靠近耳朵，然後緩慢放下。' },
+  { id: 'ex_default_16', name: '二頭彎舉', category: '手臂', muscle: 'arms', description: '孤立訓練肱二頭肌，增加手臂圍度。', equipmentSuggestions: '啞鈴/槓鈴/繩索機', freeWeightInstructions: '站立或坐姿，雙手持啞鈴或槓鈴，將前臂向上彎舉，直到二頭肌完全收縮，然後緩慢放下。' },
+  { id: 'ex_default_17', name: '三頭下壓', category: '手臂', muscle: 'arms', description: '孤立訓練肱三頭肌，增加手臂圍度。', equipmentSuggestions: '繩索機', freeWeightInstructions: '面對繩索機站立，雙手握住把手，將手臂向下壓，直到手臂完全伸直，感受三頭肌收縮。' },
+  { id: 'ex_default_18', name: '錘式彎舉', category: '手臂', muscle: 'arms', description: '訓練肱肌和肱橈肌，增加手臂厚度。', equipmentSuggestions: '啞鈴', freeWeightInstructions: '雙手持啞鈴，手心相對，將前臂向上彎舉，動作類似二頭彎舉。' },
+  { id: 'ex_default_19', name: '三頭伸展', category: '手臂', muscle: 'arms', description: '孤立訓練三頭肌，常作為輔助動作。', equipmentSuggestions: '啞鈴', freeWeightInstructions: '單手或雙手持啞鈴，將手臂向上伸直，然後向後彎曲，直到啞鈴位於頭部後方，再伸直手臂。' },
+  { id: 'ex_default_20', name: '窄握推舉', category: '手臂', muscle: 'arms', description: '針對三頭肌的複合推舉動作。', equipmentSuggestions: '槓鈴', freeWeightInstructions: '躺臥在臥推椅上，雙手窄握槓鈴（與肩同寬或略窄），慢慢放下槓鈴至胸部，然後推回起始位置，著重三頭肌發力。' },
+  { id: 'ex_default_21', name: '深蹲', category: '腿部', muscle: 'legs', description: '「訓練之王」，全身性複合動作，強健下肢、核心和臀部。', equipmentSuggestions: '槓鈴/壺鈴/啞鈴', freeWeightInstructions: '雙腳與肩同寬站立，膝蓋和腳尖方向一致，核心收緊，像坐在椅子上一樣下蹲，直到大腿與地面平行或更低，然後推起回到起始位置。' },
+  { id: 'ex_default_22', name: '腿推', category: '腿部', muscle: 'legs', description: '器械訓練，有效刺激股四頭肌和臀大肌，適合無法進行深蹲的人。', equipmentSuggestions: '腿推機', freeWeightInstructions: '坐在腿推機上，雙腳放在踏板上，將踏板向上推起，直到腿部幾乎伸直，然後緩慢放下。' },
+  { id: 'ex_default_23', name: '腿屈伸', category: '腿部', muscle: 'legs', description: '孤立訓練股四頭肌。', equipmentSuggestions: '腿屈伸機', freeWeightInstructions: '坐在器械上，將腳踝勾在滾墊下方，向上伸直雙腿，感受股四頭肌收縮，然後緩慢放下。' },
+  { id: 'ex_default_24', name: '腿後彎舉', category: '腿部', muscle: 'legs', description: '孤立訓練股二頭肌。', equipmentSuggestions: '腿後彎舉機', freeWeightInstructions: '俯臥或坐姿於器械上，將腳踝勾在滾墊下方，彎曲膝蓋將滾墊拉向臀部，感受股二頭肌收縮。' },
+  { id: 'ex_default_25', name: '提踵', category: '腿部', muscle: 'legs', description: '訓練小腿肌群，包括腓腸肌和比目魚肌。', equipmentSuggestions: '啞鈴/器械', freeWeightInstructions: '站立，腳尖著地，腳跟抬起，盡可能向上抬高，感受小腿肌肉收縮，然後緩慢放下。' },
+  { id: 'ex_default_26', name: '仰臥起坐', category: '核心', muscle: 'core', description: '經典腹部訓練動作，鍛鍊腹直肌。', equipmentSuggestions: '無', freeWeightInstructions: '仰臥於地面，雙手抱頭或交叉於胸前，利用腹部力量將上半身抬起，直到肩胛骨離開地面，然後緩慢放下。' },
+  { id: 'ex_default_27', name: '棒式', category: '核心', muscle: 'core', description: '全身性核心穩定訓練，有效鍛鍊深層核心肌群。', equipmentSuggestions: '瑜伽墊', freeWeightInstructions: '俯臥，用前臂和腳尖支撐身體，保持身體從頭到腳踝呈一直線，核心收緊，避免臀部下塌或抬高。' },
+  { id: 'ex_default_28', name: '俄羅斯轉體', category: '核心', muscle: 'core', description: '訓練腹斜肌，有助於塑造腰部線條。', equipmentSuggestions: '啞鈴/藥球（可選）', freeWeightInstructions: '坐姿，雙腳抬離地面，身體向後傾斜約45度，雙手握住啞鈴或藥球，左右轉動上半身，感受腹斜肌的收縮。' },
+  { id: 'ex_default_29', name: '腹部輪', category: '核心', muscle: 'core', description: '高強度核心訓練，強健腹部和穩定肌群。', equipmentSuggestions: '腹部輪', freeWeightInstructions: '雙膝跪地，雙手握住腹部輪手柄，向前滾動腹部輪，直到身體幾乎平躺，然後利用核心力量將腹部輪拉回起始位置。' },
+  { id: 'ex_default_30', name: '懸垂舉腿', category: '核心', muscle: 'core', description: '高難度核心訓練，有效刺激下腹部肌肉。', equipmentSuggestions: '單槓', freeWeightInstructions: '雙手懸掛於單槓上，雙腿併攏，向上抬起雙腿，直到大腿與地面平行或更高，然後緩慢放下。' }
+];
+
+const DEFAULT_WORKOUT_PLANS_DATA = [
+  {
+    // 注意: 預設計劃的 ID 不再是數字，而是字串，與 Firestore 的 document ID 保持一致
+    id: 'plan_default_1', 
+    name: '全身訓練 A (範例)',
+    exercises: [
+      { id: 'ex_default_21', name: '深蹲', category: '腿部', muscle: 'legs', weight: 80, sets: 4, reps: 8 },
+      { id: 'ex_default_1', name: '槓鈴臥推', category: '胸部', muscle: 'chest', weight: 60, sets: 3, reps: 10 },
+      { id: 'ex_default_7', name: '槓鈴划船', category: '背部', muscle: 'back', weight: 50, sets: 3, reps: 12 },
+      { id: 'ex_default_11', name: '肩推', category: '肩膀', muscle: 'shoulders', weight: 30, sets: 3, reps: 10 },
+      { id: 'ex_default_16', name: '二頭彎舉', category: '手臂', muscle: 'arms', weight: 15, sets: 3, reps: 12 },
+    ],
+    createdDate: '2025/06/25'
+  },
+];
+
+
+const App = () => { // 將主元件名稱從 WorkoutApp 改為 App
+
   // Firebase 實例和使用者 ID 狀態
   const [db, setDb] = useState(null);
-  const [auth, setAuth] = useState(null);
+  // ⭐ 修正：移除 authInstance 狀態變數，直接使用局部變數 auth ⭐
+  // const [authInstance, setAuthInstance] = useState(null); 
   const [userId, setUserId] = useState(null);
   const [isAuthReady, setIsAuthReady] = useState(false); // 標記 Firebase Auth 是否準備就緒
 
   // Canvas 環境提供的應用程式 ID (用於 Firestore 路徑)
-  const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+  // 注意：在 Canvas 外部部署時，如果您的 Firestore 安全規則依賴於特定的 appId，
+  // 您需要將 'default-app-id' 替換為您 Firebase 規則中設定的實際 appId (例如 Canvas 專案的 ID)
+  // 這裡使用外部定義的 canvasAppId
+  const appId = canvasAppId === 'default-app-id-for-local' ? 'workout-tracker-netlify-app' : canvasAppId;
 
   // UI 頁面導航狀態
   const [currentPage, setCurrentPage] = useState('daily');
@@ -24,55 +88,6 @@ const App = () => {
   const [exercises, setExercises] = useState([]); // 動作列表 (預設 + 自訂)
   const [workoutPlans, setWorkoutPlans] = useState([]); // 訓練計劃
   const [bodyStats, setBodyStats] = useState([]); // 身體數據
-
-  // 初始範例資料 (僅在資料庫無資料時載入，不會直接儲存到 Firestore)
-  const defaultExercises = [
-    { id: 1, name: '槓鈴臥推', category: '胸部', muscle: 'chest', description: '上半身力量訓練的經典動作，主要訓練胸大肌、三頭肌和三角肌前束。', equipmentSuggestions: '槓鈴、臥推椅', freeWeightInstructions: '躺臥在臥推椅上，雙手握住槓鈴略寬於肩，慢慢放下槓鈴至胸部，然後推回起始位置。核心收緊，背部微弓。' },
-    { id: 2, name: '啞鈴臥推', category: '胸部', muscle: 'chest', description: '與槓鈴臥推類似，但啞鈴提供更大的運動範圍和單邊訓練的好處。', equipmentSuggestions: '啞鈴、臥推椅', freeWeightInstructions: '每手持一啞鈴，躺臥在臥推椅上，手心相對或向前，緩慢下放啞鈴至胸部外側，然後向上推起啞鈴，啞鈴之間不需接觸。' },
-    { id: 3, name: '上斜臥推', category: '胸部', muscle: 'chest', description: '針對胸大肌上部，有助於塑造飽滿胸型。', equipmentSuggestions: '槓鈴/啞鈴、上斜臥推椅', freeWeightInstructions: '調整臥推椅為約30-45度上斜角，動作類似平板臥推，但著重於胸部上緣的發力。' },
-    { id: 4, name: '飛鳥', category: '胸部', muscle: 'chest', description: '孤立訓練胸大肌，主要作用是胸部的內收和擠壓。', equipmentSuggestions: '啞鈴/繩索機', freeWeightInstructions: '每手持一啞鈴，躺臥或站立（針對繩索機），雙臂微彎，向內擠壓啞鈴或手柄，感受胸部肌肉收縮。' },
-    { id: 5, name: '雙槓撐體', category: '胸部', muscle: 'chest', description: '自體重量訓練，全面鍛鍊胸部、三頭肌和肩部。', equipmentSuggestions: '雙槓', freeWeightInstructions: '雙手握住雙槓，身體下放直到胸部與槓平行或略低，然後推起身體回到起始位置。身體可微前傾以更刺激胸部。' },
-    { id: 6, name: '引體向上', category: '背部', muscle: 'back', description: '經典背部肌肉自體重量訓練，主要訓練背闊肌和二頭肌。', equipmentSuggestions: '單槓', freeWeightInstructions: '雙手寬握單槓，身體向上拉起直到下巴超過單槓，然後緩慢放下身體。保持身體穩定，避免擺動。' },
-    { id: 7, name: '槓鈴划船', category: '背部', muscle: 'back', description: '有效增加背部厚度的複合動作，訓練背闊肌、斜方肌、菱形肌。', equipmentSuggestions: '槓鈴', freeWeightInstructions: '雙腳與肩同寬站立，屈髖俯身，背部挺直，雙手握住槓鈴，將槓鈴拉向腹部，感受背部肌肉收縮，然後緩慢放下。' },
-    { id: 8, name: '啞鈴划船', category: '背部', muscle: 'back', description: '單邊訓練，有助於改善左右肌力不平衡，更孤立地刺激背部肌肉。', equipmentSuggestions: '啞鈴、長凳', freeWeightInstructions: '單膝跪於長凳上，一手扶住長凳支撐，另一手持啞鈴，將啞鈴拉向腰部，感受背部收縮。' },
-    { id: 9, name: '滑輪下拉', category: '背部', muscle: 'back', description: '利用器械模擬引體向上動作，適合不同肌力水平的使用者。', equipmentSuggestions: '滑輪下拉機', freeWeightInstructions: '坐在器械上，雙手寬握把手，將把手拉向胸部上方，感受背闊肌的伸展和收縮。' },
-    { id: 10, name: '硬舉', category: '背部', muscle: 'back', description: '全身性複合動作，強健背部、腿部和核心肌群。', equipmentSuggestions: '槓鈴', freeWeightInstructions: '雙腳與髖同寬站立，俯身握住槓鈴，保持背部挺直，利用臀部和腿部力量將槓鈴從地面提起，直到身體直立，然後緩慢放下。' },
-    { id: 11, name: '肩推', category: '肩膀', muscle: 'shoulders', description: '針對三角肌前束和中束的複合動作，有效增加肩部力量。', equipmentSuggestions: '槓鈴/啞鈴、推舉椅', freeWeightInstructions: '坐姿或站姿，雙手握住槓鈴或啞鈴，從肩部位置向上推舉至手臂伸直，然後緩慢下放。' },
-    { id: 12, name: '側平舉', category: '肩膀', muscle: 'shoulders', description: '孤立訓練三角肌中束，是增加肩部寬度的關鍵動作。', equipmentSuggestions: '啞鈴', freeWeightInstructions: '每手持一啞鈴，雙臂微彎，將啞鈴向身體兩側抬起，直到手臂與肩平行，感受肩部中束的收縮。' },
-    { id: 13, name: '前平舉', category: '肩膀', muscle: 'shoulders', description: '孤立訓練三角肌前束。', equipmentSuggestions: '啞鈴', freeWeightInstructions: '每手持一啞鈴，雙臂伸直，將啞鈴向前上方抬起，直到手臂與肩平行。' },
-    { id: 14, name: '後束飛鳥', category: '肩膀', muscle: 'shoulders', description: '訓練三角肌後束，有助於改善圓肩和平衡肩部發展。', equipmentSuggestions: '啞鈴/繩索機', freeWeightInstructions: '俯身或坐在器械上，雙臂微彎，向身體兩側後方打開手臂，感受肩部後束的收縮。' },
-    { id: 15, name: '聳肩', category: '肩膀', muscle: 'shoulders', description: '主要訓練斜方肌上部。', equipmentSuggestions: '啞鈴/槓鈴', freeWeightInstructions: '雙手持啞鈴或槓鈴，雙肩向上聳起，盡量靠近耳朵，然後緩慢放下。' },
-    { id: 16, name: '二頭彎舉', category: '手臂', muscle: 'arms', description: '孤立訓練肱二頭肌，增加手臂圍度。', equipmentSuggestions: '啞鈴/槓鈴/繩索機', freeWeightInstructions: '站立或坐姿，雙手持啞鈴或槓鈴，將前臂向上彎舉，直到二頭肌完全收縮，然後緩慢放下。' },
-    { id: 17, name: '三頭下壓', category: '手臂', muscle: 'arms', description: '孤立訓練肱三頭肌，增加手臂圍度。', equipmentSuggestions: '繩索機', freeWeightInstructions: '面對繩索機站立，雙手握住把手，將手臂向下壓，直到手臂完全伸直，感受三頭肌收縮。' },
-    { id: 18, name: '錘式彎舉', category: '手臂', muscle: 'arms', description: '訓練肱肌和肱橈肌，增加手臂厚度。', equipmentSuggestions: '啞鈴', freeWeightInstructions: '雙手持啞鈴，手心相對，將前臂向上彎舉，動作類似二頭彎舉。' },
-    { id: 19, name: '三頭伸展', category: '手臂', muscle: 'arms', description: '孤立訓練三頭肌，常作為輔助動作。', equipmentSuggestions: '啞鈴', freeWeightInstructions: '單手或雙手持啞鈴，將手臂向上伸直，然後向後彎曲，直到啞鈴位於頭部後方，再伸直手臂。' },
-    { id: 20, name: '窄握推舉', category: '手臂', muscle: 'arms', description: '針對三頭肌的複合推舉動作。', equipmentSuggestions: '槓鈴', freeWeightInstructions: '躺臥在臥推椅上，雙手窄握槓鈴（與肩同寬或略窄），慢慢放下槓鈴至胸部，然後推回起始位置，著重三頭肌發力。' },
-    { id: 21, name: '深蹲', category: '腿部', muscle: 'legs', description: '「訓練之王」，全身性複合動作，強健下肢、核心和臀部。', equipmentSuggestions: '槓鈴/壺鈴/啞鈴', freeWeightInstructions: '雙腳與肩同寬站立，膝蓋和腳尖方向一致，核心收緊，像坐在椅子上一樣下蹲，直到大腿與地面平行或更低，然後推起回到起始位置。' },
-    { id: 22, name: '腿推', category: '腿部', muscle: 'legs', description: '器械訓練，有效刺激股四頭肌和臀大肌，適合無法進行深蹲的人。', equipmentSuggestions: '腿推機', freeWeightInstructions: '坐在腿推機上，雙腳放在踏板上，將踏板向上推起，直到腿部幾乎伸直，然後緩慢放下。' },
-    { id: 23, name: '腿屈伸', category: '腿部', muscle: 'legs', description: '孤立訓練股四頭肌。', equipmentSuggestions: '腿屈伸機', freeWeightInstructions: '坐在器械上，將腳踝勾在滾墊下方，向上伸直雙腿，感受股四頭肌收縮，然後緩慢放下。' },
-    { id: 24, name: '腿後彎舉', category: '腿部', muscle: 'legs', description: '孤立訓練股二頭肌。', equipmentSuggestions: '腿後彎舉機', freeWeightInstructions: '俯臥或坐姿於器械上，將腳踝勾在滾墊下方，彎曲膝蓋將滾墊拉向臀部，感受股二頭肌收縮。' },
-    { id: 25, name: '提踵', category: '腿部', muscle: 'legs', description: '訓練小腿肌群，包括腓腸肌和比目魚肌。', equipmentSuggestions: '啞鈴/器械', freeWeightInstructions: '站立，腳尖著地，腳跟抬起，盡可能向上抬高，感受小腿肌肉收縮，然後緩慢放下。' },
-    { id: 26, name: '仰臥起坐', category: '核心', muscle: 'core', description: '經典腹部訓練動作，鍛鍊腹直肌。', equipmentSuggestions: '無', freeWeightInstructions: '仰臥於地面，雙手抱頭或交叉於胸前，利用腹部力量將上半身抬起，直到肩胛骨離開地面，然後緩慢放下。' },
-    { id: 27, name: '棒式', category: '核心', muscle: 'core', description: '全身性核心穩定訓練，有效鍛鍊深層核心肌群。', equipmentSuggestions: '瑜伽墊', freeWeightInstructions: '俯臥，用前臂和腳尖支撐身體，保持身體從頭到腳踝呈一直線，核心收緊，避免臀部下塌或抬高。' },
-    { id: 28, name: '俄羅斯轉體', category: '核心', muscle: 'core', description: '訓練腹斜肌，有助於塑造腰部線條。', equipmentSuggestions: '啞鈴/藥球（可選）', freeWeightInstructions: '坐姿，雙腳抬離地面，身體向後傾斜約45度，雙手握住啞鈴或藥球，左右轉動上半身，感受腹斜肌的收縮。' },
-    { id: 29, name: '腹部輪', category: '核心', muscle: 'core', description: '高強度核心訓練，強健腹部和穩定肌群。', equipmentSuggestions: '腹部輪', freeWeightInstructions: '雙膝跪地，雙手握住腹部輪手柄，向前滾動腹部輪，直到身體幾乎平躺，然後利用核心力量將腹部輪拉回起始位置。' },
-    { id: 30, name: '懸垂舉腿', category: '核心', muscle: 'core', description: '高難度核心訓練，有效刺激下腹部肌肉。', equipmentSuggestions: '單槓', freeWeightInstructions: '雙手懸掛於單槓上，雙腿併攏，向上抬起雙腿，直到大腿與地面平行或更高，然後緩慢放下。' }
-  ];
-
-  const defaultWorkoutPlans = [
-    {
-      id: 'plan_default_1', // 預設計劃使用字串 ID
-      name: '全身訓練 A (範例)',
-      exercises: [
-        { id: 21, name: '深蹲', category: '腿部', muscle: 'legs', weight: 80, sets: 4, reps: 8 },
-        { id: 1, name: '槓鈴臥推', category: '胸部', muscle: 'chest', weight: 60, sets: 3, reps: 10 },
-        { id: 7, name: '槓鈴划船', category: '背部', muscle: 'back', weight: 50, sets: 3, reps: 12 },
-        { id: 11, name: '肩推', category: '肩膀', muscle: 'shoulders', weight: 30, sets: 3, reps: 10 },
-        { id: 16, name: '二頭彎舉', category: '手臂', muscle: 'arms', weight: 15, sets: 3, reps: 12 },
-      ],
-      createdDate: '2025/06/25'
-    },
-  ];
 
   // 計時器狀態
   const [timerSeconds, setTimerSeconds] = useState(90); // 總設定時間
@@ -116,62 +131,87 @@ const App = () => {
   // 自定義提示框狀態
   const [showAlert, setShowAlert] = useState(false);
   const [alertMessage, setAlertMessage] = useState('');
-  const [alertId, setAlertId] = useState('');
+  // 將 alertId 從狀態中移除，它沒有被有效使用，或者可以整合到 alertMessage 中
+  // const [alertId, setAlertId] = useState('');
 
   // 訓練動作詳情和編輯狀態
   const [viewingExerciseDetails, setViewingExerciseDetails] = useState(null); // 儲存正在查看詳情的動作
   const [editingExercise, setEditingExercise] = useState(null); // 儲存正在編輯的動作
 
-  // 顯示自定義提示框
-  const showCustomAlert = (message, id = '') => {
+  // 顯示自定義提示框 (使用 useCallback 優化)
+  const showCustomAlert = useCallback((message, id = '') => {
     setAlertMessage(message);
-    setAlertId(id);
+    // 如果需要區分不同的提示，可以將 id 包含在 message 中或在其他地方使用
+    // setAlertId(id); // 如果不需要，可以註釋掉此行以消除警告
     setShowAlert(true);
     // 自動關閉提示框
     setTimeout(() => {
       setShowAlert(false);
       setAlertMessage('');
-      setAlertId('');
+      // setAlertId(''); // 同步移除
     }, 3000);
-  };
+  }, []); // 空依賴陣列表示這個函數只創建一次
 
   // Firebase 初始化和身份驗證
   useEffect(() => {
-    const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+    let firebaseConfigToUse = null;
 
-    if (!firebaseConfig || Object.keys(firebaseConfig).length === 0) {
-      console.error("Firebase config is not defined or empty.");
-      // 如果沒有 Firebase config，則使用本地狀態並彈出提示
-      showCustomAlert('Firebase 配置無效，將使用本地儲存。');
-      setIsAuthReady(true); // 即使沒有 Firebase 也標記為準備就緒，讓應用程式能跑起來
-      // 載入預設的本地數據
-      setExercises(defaultExercises);
-      setWorkoutPlans(defaultWorkoutPlans);
-      return;
+    // 優先從 Canvas 環境載入配置
+    if (Object.keys(canvasFirebaseConfig).length > 0) {
+        firebaseConfigToUse = canvasFirebaseConfig;
+        console.log("Using Firebase config from Canvas environment.");
+    } else {
+        // 如果沒有從 Canvas 載入，則使用用戶手動填寫的配置
+        firebaseConfigToUse = {
+            apiKey: "AIzaSyAFYByFw1XPghJYPofGg-punSt6gfSgR00",
+            authDomain: "workouttrackerapp-3d241.firebaseapp.com",
+            projectId: "workouttrackerapp-3d241",
+            storageBucket: "workouttrackerapp-3d241.firebasestorage.app",
+            messagingSenderId: "846450892613",
+            appId: "1:846450892613:web:0e02e86ab853f8e443282c",
+            // measurementId: "YOUR_MEASUREMENT_ID" // 可選，如果您的專案有啟用 Google Analytics
+        };
+        
+        // 再次檢查是否還是預設的 placeholder 值（即使已替換為您的值，這裡仍檢查以避免未替換的情況）
+        if (!firebaseConfigToUse.apiKey || 
+            firebaseConfigToUse.apiKey === "YOUR_API_KEY" || // 以防萬一，再次檢查
+            firebaseConfigToUse.authDomain === "YOUR_AUTH_DOMAIN" || 
+            firebaseConfigToUse.projectId === "YOUR_PROJECT_ID" || 
+            firebaseConfigToUse.appId === "YOUR_APP_ID") {
+            
+            console.error("Firebase config is still using placeholder values or is incomplete. Using local storage as fallback.");
+            showCustomAlert('Firebase 配置無效，請填寫您的專案配置。將使用本地儲存。');
+            setIsAuthReady(true);
+            setExercises(DEFAULT_EXERCISES_DATA); // ⭐ 修正：使用全局常量 ⭐
+            setWorkoutPlans(DEFAULT_WORKOUT_PLANS_DATA); // ⭐ 修正：使用全局常量 ⭐
+            return;
+        }
+        console.log("Using explicit Firebase config for non-Canvas environment.");
     }
 
-    const app = initializeApp(firebaseConfig);
-    const firestore = getFirestore(app);
-    const authInstance = getAuth(app);
+    // 初始化 Firebase
+    const app = initializeApp(firebaseConfigToUse);
+    setDb(getFirestore(app)); // ⭐ 修正：直接將 getFirestore(app) 的結果設置到 db 狀態中 ⭐
 
-    setDb(firestore);
-    setAuth(authInstance);
+    const auth = getAuth(app); // 使用局部變數 auth
+    // ⭐ 修正：移除 setAuthInstance(auth); 這一行 ⭐
 
     const authenticate = async () => {
       try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(authInstance, __initial_auth_token);
+        // 使用 Canvas 環境提供的初始認證令牌，如果沒有則匿名登入
+        // 注意：在 Canvas 外部部署時，canvasInitialAuthToken 為 null，會自動匿名登入
+        if (canvasInitialAuthToken) {
+          await signInWithCustomToken(auth, canvasInitialAuthToken); // ⭐ 使用局部變數 auth ⭐
           console.log("Signed in with custom token.");
         } else {
-          await signInAnonymously(authInstance);
+          await signInAnonymously(auth); // ⭐ 使用局部變數 auth ⭐
           console.log("Signed in anonymously.");
         }
       } catch (error) {
         console.error("Error during Firebase authentication:", error);
         showCustomAlert('Firebase 認證失敗，將使用本地儲存。');
-        // 認證失敗時，依然讓應用程式運行，但使用本地狀態
-        setExercises(defaultExercises);
-        setWorkoutPlans(defaultWorkoutPlans);
+        setExercises(DEFAULT_EXERCISES_DATA); // ⭐ 修正：使用全局常量 ⭐
+        setWorkoutPlans(DEFAULT_WORKOUT_PLANS_DATA); // ⭐ 修正：使用全局常量 ⭐
       } finally {
         setIsAuthReady(true); // 標記為認證流程完成
       }
@@ -180,7 +220,8 @@ const App = () => {
     authenticate();
 
     // 監聽身份驗證狀態變化
-    const unsubscribeAuth = onAuthStateChanged(authInstance, (user) => {
+    // ⭐ 修正：onAuthStateChanged 的回調函數的依賴應該是 auth 這個局部變數 ⭐
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => { 
       if (user) {
         setUserId(user.uid);
         console.log("User UID:", user.uid);
@@ -193,13 +234,13 @@ const App = () => {
     return () => {
       if (unsubscribeAuth) unsubscribeAuth();
     };
-  }, [appId]); // 依賴 appId，確保在 Canvas 環境中正確初始化
+  }, [appId, showCustomAlert]); // ⭐ 修正：移除了 canvasInitialAuthToken 依賴 ⭐
 
   // 資料載入 (從 Firestore 或使用預設值)
   useEffect(() => {
+    // 只有當 Firebase 和用戶 ID 都準備好時才執行數據載入
     if (!isAuthReady || !db || !userId) {
-      // 如果 Firebase 未準備好或用戶未登入，不執行數據載入
-      // 或者如果沒有 Firebase 配置，則已在上面的 useEffect 中設定了本地數據
+      // 如果沒有 Firebase 配置，則已在上面的 useEffect 中設定了本地數據
       return;
     }
 
@@ -210,16 +251,13 @@ const App = () => {
       const exercisesRef = collection(db, `artifacts/${appId}/users/${userId}/exercises`);
       const exercisesSnap = await getDocs(exercisesRef);
       if (exercisesSnap.empty) {
-        // 如果 Firestore 中沒有 exercises，載入預設值
-        setExercises(defaultExercises);
+        // 如果 Firestore 中沒有 exercises，載入預設值並保存到 Firestore
+        setExercises(DEFAULT_EXERCISES_DATA); // ⭐ 修正：使用全局常量 ⭐
         console.log("Loaded default exercises.");
-        // 可以選擇將預設值保存到 Firestore
-        // 注意: 預設的數字 ID 不會直接作為 Firestore 文檔 ID，Firestore 會自動生成
-        // 所以這裡我們使用 addDoc
-        defaultExercises.forEach(async (ex) => {
-          const { id, ...dataToSave } = ex; // 移除本地 id
-          await addDoc(exercisesRef, dataToSave);
-        });
+        for (const ex of DEFAULT_EXERCISES_DATA) { // ⭐ 修正：使用全局常量 ⭐
+          // 使用 setDoc 並指定自訂 ID，以避免每次重新整理都生成新文檔
+          await setDoc(doc(exercisesRef, ex.id), ex); 
+        }
         console.log("Saved default exercises to Firestore.");
       } else {
         setExercises(exercisesSnap.docs.map(doc => ({ ...doc.data(), id: doc.id }))); // Firestore ID 是字串
@@ -230,12 +268,12 @@ const App = () => {
       const plansRef = collection(db, `artifacts/${appId}/users/${userId}/workoutPlans`);
       const plansSnap = await getDocs(plansRef);
       if (plansSnap.empty) {
-        setWorkoutPlans(defaultWorkoutPlans);
+        setWorkoutPlans(DEFAULT_WORKOUT_PLANS_DATA); // ⭐ 修正：使用全局常量 ⭐
         console.log("Loaded default workout plans.");
-        // 可以選擇將預設值保存到 Firestore
-        defaultWorkoutPlans.forEach(async (plan) => {
-          await addDoc(plansRef, plan); // 讓 Firestore 自動生成 ID
-        });
+        for (const plan of DEFAULT_WORKOUT_PLANS_DATA) { // ⭐ 修正：使用全局常量 ⭐
+          // 使用 setDoc 並指定自訂 ID
+          await setDoc(doc(plansRef, plan.id), plan);
+        }
         console.log("Saved default workout plans to Firestore.");
       } else {
         setWorkoutPlans(plansSnap.docs.map(doc => ({ ...doc.data(), id: doc.id })));
@@ -257,8 +295,8 @@ const App = () => {
 
     loadDataFromFirestore();
 
-    // 設定即時監聽 (onSnapshot)
-    // 監聽 exercises (Firestore id 現在是字串，不再需要 parseInt)
+    // 設定即時監聽 (onSnapshot)，以確保數據實時更新
+    // 監聽 exercises
     const exercisesQuery = query(collection(db, `artifacts/${appId}/users/${userId}/exercises`));
     const unsubscribeExercises = onSnapshot(exercisesQuery, (snapshot) => {
       setExercises(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
@@ -288,7 +326,7 @@ const App = () => {
       unsubscribeWorkoutData();
       unsubscribeBodyStats();
     };
-  }, [isAuthReady, db, userId, appId]); // 確保在 Firebase 和用戶 ID 準備好後才載入資料
+  }, [isAuthReady, db, userId, appId]); // 依賴項是正確的
 
   // 計時器效果
   useEffect(() => {
@@ -303,7 +341,7 @@ const App = () => {
     }
     // 當 isTimerRunning 或 timerDisplay 改變時，清除舊的 Interval
     return () => clearInterval(timerIntervalRef.current);
-  }, [isTimerRunning, timerDisplay]);
+  }, [isTimerRunning, timerDisplay, showCustomAlert]); // 新增 showCustomAlert 到依賴陣列
 
   // 格式化時間顯示
   const formatTime = (seconds) => {
@@ -312,19 +350,17 @@ const App = () => {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // 添加今日訓練記錄
-  const addTodayWorkout = async () => {
-    if (!db || !userId) { showCustomAlert('資料庫未準備好或用戶未登入。', 'db-not-ready'); return; }
-    if (!selectedExercise || !weight || !sets || !reps) {
-      showCustomAlert('請填寫所有訓練記錄欄位！', 'add-workout-error');
-      return;
-    }
-    
-    // 這裡的 exerciseId 來自 select option 的 value (Firebase 文檔 ID，字串)
+  // 添加今日訓練記錄 (本地操作)
+  const addTodayWorkout = () => {
+    // 這裡的 selectedExercise 是 Firebase 文檔 ID (字串)
     const exercise = exercises.find(ex => ex.id === selectedExercise); 
     if (!exercise) {
-      showCustomAlert('未找到選定的訓練動作！', 'exercise-not-found');
+      showCustomAlert('未找到選定的訓練動作或欄位未填寫！', 'exercise-not-found');
       return;
+    }
+    if (!weight || !sets || !reps) {
+        showCustomAlert('請填寫所有訓練記錄欄位！', 'add-workout-error');
+        return;
     }
 
     const newRecord = {
@@ -340,7 +376,6 @@ const App = () => {
     };
     
     // 將新記錄添加到今日訓練的暫存列表 (不是直接保存到 Firestore)
-    // 只有點擊「儲存今日」才會保存到 workoutData 集合
     setTodayWorkout(prev => [...prev, newRecord]);
     
     setSelectedExercise('');
@@ -350,8 +385,8 @@ const App = () => {
     showCustomAlert('訓練記錄已新增到今日菜單！', 'add-workout-success');
   };
 
-  // 從訓練計劃載入動作
-  const loadWorkoutPlan = async () => {
+  // 從訓練計劃載入動作 (本地操作)
+  const loadWorkoutPlan = () => {
     if (!selectedWorkoutPlan) {
       showCustomAlert('請選擇一個訓練計劃！', 'select-plan-error');
       return;
@@ -366,7 +401,7 @@ const App = () => {
     const planWorkouts = plan.exercises.map(exercise => ({
       id: Date.now() + Math.random(), // 臨時前端 ID，用於列表鍵值
       date: new Date().toLocaleDateString('zh-TW'),
-      exerciseId: exercise.id, // 動作的 Firebase 文檔 ID
+      exerciseId: exercise.id, // 動作的 Firebase 文檔 ID (字串)
       exerciseName: exercise.name,
       category: exercise.category,
       muscle: exercise.muscle,
@@ -381,14 +416,14 @@ const App = () => {
     showCustomAlert(`訓練計劃 "${plan.name}" 已載入！`, 'load-plan-success');
   };
 
-  // 切換今日訓練記錄的完成狀態 (本地狀態)
+  // 切換今日訓練記錄的完成狀態 (本地操作)
   const toggleCompleted = (id) => {
     setTodayWorkout(todayWorkout.map(workout => 
       workout.id === id ? { ...workout, completed: !workout.completed } : workout
     ));
   };
 
-  // 更新今日訓練記錄中的重量、組數、次數 (本地狀態)
+  // 更新今日訓練記錄中的重量、組數、次數 (本地操作)
   const updateWorkoutRecord = (id, field, value) => {
     setTodayWorkout(todayWorkout.map(workout => 
       workout.id === id ? { ...workout, [field]: parseFloat(value) || 0 } : workout
@@ -410,7 +445,7 @@ const App = () => {
     }
     
     const exercisesInPlan = todayWorkout.map(w => ({
-      id: w.exerciseId, // 使用動作的 Firebase 文檔 ID
+      id: w.exerciseId, // 使用動作的 Firebase 文檔 ID (字串)
       name: w.exerciseName,
       category: w.category,
       muscle: w.muscle,
@@ -500,7 +535,6 @@ const App = () => {
     
     try {
       await addDoc(collection(db, `artifacts/${appId}/users/${userId}/exercises`), newExercise);
-      console.log("Document written with ID: ", newExercise.id);
       showCustomAlert('自訂動作已新增！', 'custom-exercise-added');
     } catch (e) {
       console.error("Error adding document: ", e);
@@ -517,12 +551,16 @@ const App = () => {
   // 刪除動作 (從 Firestore)
   const deleteExercise = async (exerciseId) => {
     if (!db || !userId) { showCustomAlert('資料庫未準備好或用戶未登入。', 'db-not-ready'); return; }
-    if (!window.confirm("確定要刪除此動作嗎？此操作不可逆！")) { // 簡單確認，實際應用可使用自訂 modal
+    // 使用自訂訊息框而非 window.confirm
+    const confirmDelete = window.confirm("確定要刪除此動作嗎？此操作不可逆！"); 
+    if (!confirmDelete) {
       return;
     }
     try {
       await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/exercises`, exerciseId));
       showCustomAlert('動作已刪除！', 'exercise-deleted');
+      setViewingExerciseDetails(null); // 如果正在查看該動作，關閉詳情
+      setEditingExercise(null); // 如果正在編輯該動作，關閉編輯
     } catch (e) {
       console.error("Error deleting exercise: ", e);
       showCustomAlert('刪除動作失敗！', 'delete-exercise-fail');
@@ -943,7 +981,7 @@ const App = () => {
                       </button>
                     </div>
                     
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div>
                         <label className="block text-xs text-gray-600 mb-1">重量(kg)</label>
                         <input
@@ -1010,7 +1048,7 @@ const App = () => {
               <ChevronLeft size={24} />
             </button>
             <h2 className="text-2xl font-bold text-gray-800">
-              {editingExercise ? '編輯動作' : viewingExerciseDetails.name}
+              {editingExercise ? '編輯動作' : (viewingExerciseDetails ? viewingExerciseDetails.name : '動作詳情')}
             </h2>
             {editingExercise ? (
               <button 
@@ -1020,12 +1058,14 @@ const App = () => {
                 <Save size={20} /> 儲存
               </button>
             ) : (
-              <button 
-                onClick={() => setEditingExercise(viewingExerciseDetails)} 
-                className="text-blue-600 font-semibold px-4 py-2 rounded-lg bg-blue-100 hover:bg-blue-200 transition-colors flex items-center gap-1"
-              >
-                <Edit size={20} /> 編輯
-              </button>
+              viewingExerciseDetails && ( // 只有在查看詳情時才顯示編輯按鈕
+                <button 
+                  onClick={() => setEditingExercise(viewingExerciseDetails)} 
+                  className="text-blue-600 font-semibold px-4 py-2 rounded-lg bg-blue-100 hover:bg-blue-200 transition-colors flex items-center gap-1"
+                >
+                  <Edit size={20} /> 編輯
+                </button>
+              )
             )}
           </div>
 
@@ -1089,6 +1129,7 @@ const App = () => {
             </div>
           ) : (
             // 動作詳情介面
+            viewingExerciseDetails && (
             <div className="space-y-4 pt-4 text-gray-800">
               <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
                 <div className="font-semibold text-gray-700 mb-1">部位:</div>
@@ -1111,6 +1152,7 @@ const App = () => {
                 <p className="whitespace-pre-wrap">{viewingExerciseDetails.freeWeightInstructions || '無自由重量操作方式說明'}</p>
               </div>
             </div>
+            )
           )}
         </div>
       ) : (
@@ -1814,4 +1856,4 @@ const App = () => {
   );
 };
 
-export default App;
+export default App; // 導出元件名稱為 App
