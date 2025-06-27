@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Plus, Dumbbell, Calendar, TrendingUp, Timer, Save, Trash2, Play, Pause, RotateCcw, ChevronLeft, ChevronRight, BarChart3, Search, Edit, Info } from 'lucide-react';
-import { BrowserRouter as Router, Routes, Route, Link, useNavigate } from 'react-router-dom'; // 引入路由相關組件和 Hook
+import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom'; // 移除 useNavigate
 
 // Firebase 相關引入
 import { initializeApp } from 'firebase/app';
@@ -40,7 +40,7 @@ const DEFAULT_EXERCISES_DATA = [
   { id: 'ex_default_24', name: '腿後彎舉', category: '腿部', muscle: 'legs', description: '孤立訓練股二頭肌。', equipmentSuggestions: '腿後彎舉機', freeWeightInstructions: '俯臥或坐姿於器械上，將腳踝勾在滾墊下方，彎曲膝蓋將滾墊拉向臀部，感受股二頭肌收縮。' },
   { id: 'ex_default_25', name: '提踵', category: '腿部', muscle: 'legs', description: '訓練小腿肌群，包括腓腸肌和比目魚肌。', equipmentSuggestions: '啞鈴/器械', freeWeightInstructions: '站立，腳尖著地，腳跟抬起，盡可能向上抬高，感受小腿肌肉收縮，然後緩慢放下。' },
   { id: 'ex_default_26', name: '仰臥起坐', category: '核心', muscle: 'core', description: '經典腹部訓練動作，鍛鍊腹直肌。', equipmentSuggestions: '無', freeWeightInstructions: '仰臥於地面，雙手抱頭或交叉於胸前，利用腹部力量將上半身抬起，直到肩胛骨離開地面，然後緩慢放下。' },
-  { id: 'ex_default_27', name: '棒式', category: '核心', muscle: 'core', description: '全身性核心穩定訓練，有效鍛鍊深層核心肌群。', equipmentSuggestions: '瑜伽墊', freeWeightInstructions: '俯臥，用前臂和腳尖支撐身體，保持身體從頭到腳踝呈一直線，核心收緊，避免臀部下塌或抬高。' },
+  { id: 'ex_default_27', name: '棒式', category: '核心', muscle: 'core', description: '全身性核心穩定訓練，有效鍛鍊深層核心肌群。', equipmentSuggestions: '瑜伽墊', freeWeightInstructions: '俯臥，用前臂和腳尖支撐身體，保持身體從頭到腳踝呈一直線，核心收緊，避免臀部下塌或抬高。' }, // 已移除多餘文字
   { id: 'ex_default_28', name: '俄羅斯轉體', category: '核心', muscle: 'core', description: '訓練腹斜肌，有助於塑造腰部線條。', equipmentSuggestions: '啞鈴/藥球（可選）', freeWeightInstructions: '坐姿，雙腳抬離地面，身體向後傾斜約45度，雙手握住啞鈴或藥球，左右轉動上半身，感受腹斜肌的收縮。' },
   { id: 'ex_default_29', name: '腹部輪', category: '核心', muscle: 'core', description: '高強度核心訓練，強健腹部和穩定肌群。', equipmentSuggestions: '腹部輪', freeWeightInstructions: '雙膝跪地，雙手握住腹部輪手柄，向前滾動腹部輪，直到身體幾乎平躺，然後利用核心力量將腹部輪拉回起始位置。' },
   { id: 'ex_default_30', name: '懸垂舉腿', category: '核心', muscle: 'core', description: '高難度核心訓練，有效刺激下腹部肌肉。', equipmentSuggestions: '單槓', freeWeightInstructions: '雙手懸掛於單槓上，雙腿併攏，向上抬起雙腿，直到大腿與地面平行或更高，然後緩慢放下。' }
@@ -122,9 +122,6 @@ const App = () => {
   // 訓練動作詳情和編輯狀態
   const [viewingExerciseDetails, setViewingExerciseDetails] = useState(null);
   const [editingExercise, setEditingExercise] = useState(null);
-
-  // 路由導航 Hook
-  const navigate = useNavigate();
 
   // 顯示自定義提示框 (使用 useCallback 優化)
   const showCustomAlert = useCallback((message, id = '') => {
@@ -691,12 +688,14 @@ const App = () => {
     };
   };
 
-  const stats = getStats();
-
-  // 渲染底部導航欄
-  const renderBottomNav = () => {
-    // 使用 useNavigate 鉤子獲取當前路徑
-    const navigateTo = useNavigate(); 
+  // 將 BottomNav 轉換為一個獨立的 React 組件
+  const BottomNav = ({ 
+    setEditingPlan, 
+    setPlanSearchQuery, 
+    setSelectedCategory, 
+    setViewingExerciseDetails, 
+    setEditingExercise 
+  }) => {
     const currentPath = window.location.pathname; // 直接從 window.location 獲取當前路徑
 
     return (
@@ -714,11 +713,11 @@ const App = () => {
               to={path}
               onClick={() => {
                 // 清除相關的編輯/搜尋狀態，以便頁面切換後是乾淨的
-                setEditingPlan(null);
-                setPlanSearchQuery('');
-                setSelectedCategory('');
-                setViewingExerciseDetails(null);
-                setEditingExercise(null);
+                setEditingPlan(null); 
+                setPlanSearchQuery(''); 
+                setSelectedCategory(''); 
+                setViewingExerciseDetails(null); 
+                setEditingExercise(null); 
               }}
               className={`flex flex-col items-center py-2 px-3 rounded-lg transition-colors duration-200 ${
                 currentPath === path // 根據 currentPath 判斷 active 狀態
@@ -1332,18 +1331,14 @@ const App = () => {
         <div className="space-y-4">
           {workoutPlans
             .filter(plan => plan.name.toLowerCase().includes(planSearchQuery.toLowerCase()))
-            .sort((a, b) => {
-              const dateA = new Date(a.createdDate);
-              const dateB = new Date(b.createdDate);
-              return dateB - dateA;
-            })
+            .sort((a, b) => new Date(b.createdDate) - new Date(a.createdDate)) // 按日期降序排序
             .map(plan => (
             <div 
               key={plan.id} 
               className="bg-gray-50 rounded-xl shadow-sm p-4 border border-gray-100 flex justify-between items-center hover:bg-gray-100 transition-colors cursor-pointer"
               onClick={() => {
-                setEditingPlan(plan);
-                setSelectedCategory('');
+                setEditingPlan(plan); // 點擊計劃卡片進入編輯模式
+                setSelectedCategory(''); // 清空編輯模式下的部位篩選
               }}
             >
               <div>
@@ -1362,8 +1357,8 @@ const App = () => {
           <div className="flex items-center justify-between mb-6 border-b pb-4 sticky top-0 bg-white z-10">
             <button 
               onClick={() => {
-                setEditingPlan(null);
-                setSelectedCategory('');
+                setEditingPlan(null); // 返回計劃列表
+                setSelectedCategory(''); // 清空部位篩選
               }} 
               className="p-2 rounded-full hover:bg-gray-100"
               title="返回計劃列表"
@@ -1373,8 +1368,8 @@ const App = () => {
             <h2 className="text-2xl font-bold text-gray-800">{editingPlan.name}</h2>
             <button 
               onClick={() => {
-                  updateEditingPlan(editingPlan);
-                  setEditingPlan(null);
+                  // 儲存編輯後的計劃
+                  updateEditingPlan(editingPlan); // 使用 Firebase 儲存
               }} 
               className="text-blue-600 font-semibold px-4 py-2 rounded-lg bg-blue-100 hover:bg-blue-200 transition-colors flex items-center gap-1"
             >
@@ -1383,6 +1378,7 @@ const App = () => {
           </div>
 
           <div className="space-y-4 pt-4">
+            {/* 編輯計劃內部的動作列表 */}
             {editingPlan.exercises.length === 0 && (
               <div className="text-center text-gray-500 mt-10">
                 <p>此計劃沒有動作。</p>
@@ -1394,6 +1390,7 @@ const App = () => {
                   <div className="font-bold text-lg text-gray-800">{exercise.name}</div>
                   <button
                     onClick={() => {
+                      // 從編輯中的計劃中移除動作
                       const updatedExercises = editingPlan.exercises.filter(ex => ex.id !== exercise.id);
                       setEditingPlan({ ...editingPlan, exercises: updatedExercises });
                       showCustomAlert(`${exercise.name} 已從計劃中移除。`, 'exercise-removed-from-plan');
@@ -1487,7 +1484,7 @@ const App = () => {
                         <label key={exercise.id} className="flex items-center gap-2 py-1 cursor-pointer hover:bg-gray-100 rounded-md px-2">
                           <input
                             type="checkbox"
-                            checked={false}
+                            checked={false} 
                             onChange={() => {
                               const updatedExercises = [
                                 ...editingPlan.exercises,
@@ -1516,247 +1513,266 @@ const App = () => {
     </div>
   );
 
-  const ProgressPage = () => (
-    <div className="p-4 pb-20">
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">進度追蹤</h1>
-      
-      <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-gray-100">
-        <h2 className="text-lg font-semibold mb-4 text-gray-800">記錄身體數據</h2>
+  // ⭐ 修正: 將 ProgressPage 轉換為一個獨立的 React 組件 ⭐
+  const ProgressPage = () => { // 將函數名稱改為大寫開頭
+    // 重新計算統計數據 (如果需要，但 getStats 已經是響應式的)
+    const currentStats = getStats();
+
+    return (
+      <div className="p-4 pb-20">
+        <h1 className="text-2xl font-bold text-gray-800 mb-6">進度追蹤</h1>
         
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-          <input
-            type="number"
-            placeholder="體重(kg)"
-            className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            value={bodyWeight}
-            onChange={(e) => setBodyWeight(e.target.value)}
-            min="0"
-          />
-          <input
-            type="number"
-            placeholder="肌肉重(kg)"
-            className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            value={muscleWeight}
-            onChange={(e) => setMuscleWeight(e.target.value)}
-            min="0"
-          />
-          <input
-            type="number"
-            placeholder="脂肪重(kg)"
-            className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            value={fatWeight}
-            onChange={(e) => setFatWeight(e.target.value)}
-            min="0"
-          />
-          <input
-            type="number"
-            placeholder="體脂率(%)"
-            className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            value={bodyFatPercent}
-            onChange={(e) => setBodyFatPercent(e.target.value)}
-            min="0"
-            max="100"
-          />
+        {/* 身體數據輸入 */}
+        <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-gray-100">
+          <h2 className="text-lg font-semibold mb-4 text-gray-800">記錄身體數據</h2>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+            <input
+              type="number"
+              placeholder="體重(kg)"
+              className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              value={bodyWeight}
+              onChange={(e) => setBodyWeight(e.target.value)}
+              min="0"
+            />
+            <input
+              type="number"
+              placeholder="肌肉重(kg)"
+              className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              value={muscleWeight}
+              onChange={(e) => setMuscleWeight(e.target.value)}
+              min="0"
+            />
+            <input
+              type="number"
+              placeholder="脂肪重(kg)"
+              className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              value={fatWeight}
+              onChange={(e) => setFatWeight(e.target.value)}
+              min="0"
+            />
+            <input
+              type="number"
+              placeholder="體脂率(%)"
+              className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              value={bodyFatPercent}
+              onChange={(e) => setBodyFatPercent(e.target.value)}
+              min="0"
+              max="100"
+            />
+          </div>
+          
+          <button
+            onClick={addBodyStats}
+            className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+          >
+            <Plus size={20} />
+            記錄數據
+          </button>
         </div>
         
-        <button
-          onClick={addBodyStats}
-          className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
-        >
-          <Plus size={20} />
-          記錄數據
-        </button>
-      </div>
-      
-      <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-gray-100">
-        <div className="flex justify-center mb-4">
-          <div className="bg-gray-100 rounded-lg p-1 flex">
-            {[
-              { key: 'week', label: '週' },
-              { key: 'month', label: '月' },
-              { key: 'year', label: '年' }
-            ].map(({ key, label }) => (
-              <button
-                key={key}
-                onClick={() => setStatsView(key)}
-                className={`px-4 py-2 rounded-md transition-colors duration-200 ${
-                  statsView === key 
-                    ? 'bg-blue-600 text-white shadow' 
-                    : 'text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-        
-        <div className="grid grid-cols-2 gap-4 mb-4">
-          <div className="bg-blue-50 p-4 rounded-lg text-center border border-blue-100">
-            <div className="text-2xl font-bold text-blue-600">{stats.workoutDays}</div>
-            <div className="text-sm text-gray-600">總運動天數</div>
-          </div>
-          <div className="bg-green-50 p-4 rounded-lg text-center border border-green-100">
-            <div className="text-2xl font-bold text-green-600">{stats.completedExercises}</div>
-            <div className="text-sm text-gray-600">完成項目</div>
-          </div>
-        </div>
-        
-        <h3 className="text-lg font-semibold mb-3 text-gray-800">部位訓練統計 (總組數)</h3>
-        {Object.entries(stats.categoryStats).length === 0 && (
-          <div className="text-center text-gray-500 mt-5">
-            <p>目前沒有部位訓練統計數據。</p>
-          </div>
-        )}
-        <div className="space-y-2 mb-6">
-          {Object.entries(stats.categoryStats)
-            .sort(([, countA], [, countB]) => countB - countA)
-            .map(([category, count]) => (
-            <div key={category} className="flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-100">
-              <span className="font-medium text-gray-800">{category}動作</span>
-              <span className="text-blue-600 font-semibold">{count} 組</span>
+        {/* 統計視圖切換 */}
+        <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-gray-100">
+          <div className="flex justify-center mb-4">
+            <div className="bg-gray-100 rounded-lg p-1 flex">
+              {[
+                { key: 'week', label: '週' },
+                { key: 'month', label: '月' },
+                { key: 'year', label: '年' }
+              ].map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => setStatsView(key)}
+                  className={`px-4 py-2 rounded-md transition-colors duration-200 ${
+                    statsView === key 
+                      ? 'bg-blue-600 text-white shadow' 
+                      : 'text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
-          ))}
-        </div>
-      </div>
-      
-      {bodyStats.length > 0 && (
-        <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
-          <h3 className="text-lg font-semibold mb-3 text-gray-800">身體數據記錄</h3>
-          <div className="space-y-2">
-            {bodyStats.sort((a, b) => {
-              const dateA = new Date(a.date);
-              const dateB = new Date(b.date);
-              return dateB - dateA;
-            }).slice(0, 5).map(stat => (
-              <div key={stat.id} className="bg-gray-50 p-3 rounded-lg border border-gray-100">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600">{stat.date}</span>
-                  <div className="text-sm">
-                    <span className="font-semibold text-gray-800">{stat.weight}kg</span>
-                    {stat.bodyFatPercent && (
-                      <span className="ml-2 text-gray-600">體脂率: {stat.bodyFatPercent}%</span>
-                    )}
-                    {stat.muscleWeight && (
-                      <span className="ml-2 text-gray-600">肌肉: {stat.muscleWeight}kg</span>
-                    )}
-                  </div>
-                </div>
+          </div>
+          
+          {/* 統計數據顯示 */}
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <div className="bg-blue-50 p-4 rounded-lg text-center border border-blue-100">
+              <div className="text-2xl font-bold text-blue-600">{currentStats.workoutDays}</div>
+              <div className="text-sm text-gray-600">總運動天數</div>
+            </div>
+            <div className="bg-green-50 p-4 rounded-lg text-center border border-green-100">
+              <div className="text-2xl font-bold text-green-600">{currentStats.completedExercises}</div>
+              <div className="text-sm text-gray-600">完成項目</div>
+            </div>
+          </div>
+          
+          {/* 部位訓練統計 */}
+          <h3 className="text-lg font-semibold mb-3 text-gray-800">部位訓練統計 (總組數)</h3>
+          {Object.entries(currentStats.categoryStats).length === 0 && (
+            <div className="text-center text-gray-500 mt-5">
+              <p>目前沒有部位訓練統計數據。</p>
+            </div>
+          )}
+          <div className="space-y-2 mb-6">
+            {Object.entries(currentStats.categoryStats)
+              .sort(([, countA], [, countB]) => countB - countA) // 按組數降序排序
+              .map(([category, count]) => (
+              <div key={category} className="flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-100">
+                <span className="font-medium text-gray-800">{category}動作</span>
+                <span className="text-blue-600 font-semibold">{count} 組</span>
               </div>
             ))}
           </div>
         </div>
-      )}
-      {bodyStats.length === 0 && (
-        <div className="text-center text-gray-500 mt-10">
-          <p>目前沒有身體數據記錄。</p>
-        </div>
-      )}
-    </div>
-  );
+        
+        {/* 身體數據歷史 */}
+        {bodyStats.length > 0 && (
+          <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
+            <h3 className="text-lg font-semibold mb-3 text-gray-800">身體數據記錄</h3>
+            <div className="space-y-2">
+              {bodyStats.sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5).map(stat => ( // 最新5條記錄
+                <div key={stat.id} className="bg-gray-50 p-3 rounded-lg border border-gray-100">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">{stat.date}</span>
+                    <div className="text-sm">
+                      <span className="font-semibold text-gray-800">{stat.weight}kg</span>
+                      {stat.bodyFatPercent && (
+                        <span className="ml-2 text-gray-600">體脂率: {stat.bodyFatPercent}%</span>
+                      )}
+                      {stat.muscleWeight && (
+                        <span className="ml-2 text-gray-600">肌肉: {stat.muscleWeight}kg</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {bodyStats.length === 0 && (
+          <div className="text-center text-gray-500 mt-10">
+            <p>目前沒有身體數據記錄。</p>
+          </div>
+        )}
+      </div>
+    );
+  };
 
-  const TimerPage = () => (
-    <div className="p-4 pb-20">
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">組間計時器</h1>
-      
-      <div className="bg-white rounded-xl shadow-lg p-8 text-center border border-gray-100">
-        <div className="mb-8">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            設定休息時間
-          </label>
-          <div className="flex items-center justify-center gap-4">
-            <span className="text-lg font-semibold min-w-10 text-gray-800">
-              {formatTime(timerSeconds)}
-            </span>
-            <input
-              type="range"
-              min="15"
-              max="360"
-              step="5"
-              value={timerSeconds}
-              onChange={(e) => {
-                if (!isTimerRunning) {
-                  const newTime = parseInt(e.target.value);
-                  setTimerSeconds(newTime);
-                  setTimerDisplay(newTime);
-                }
-              }}
-              className="w-2/3 h-2 bg-blue-200 rounded-lg appearance-none cursor-pointer range-lg"
-              disabled={isTimerRunning}
-              style={{
-                background: `linear-gradient(to right, #3B82F6 0%, #3B82F6 ${(timerSeconds - 15) / (360 - 15) * 100}%, #E0E7FF ${(timerSeconds - 15) / (360 - 15) * 100}%, #E0E7FF 100%)`
-              }}
-            />
-          </div>
-        </div>
+  // ⭐ 修正: 將 TimerPage 轉換為一個獨立的 React 組件 ⭐
+  const TimerPage = () => { // 將函數名稱改為大寫開頭
+    return (
+      <div className="p-4 pb-20">
+        <h1 className="text-2xl font-bold text-gray-800 mb-6">組間計時器</h1>
         
-        <div className="mb-8">
-          <div className={`text-6xl font-bold mb-4 transition-colors duration-500 ${
-            timerDisplay <= 10 && timerDisplay > 0 ? 'text-red-500 animate-pulse' : 'text-blue-600'
-          } ${timerDisplay === 0 ? 'text-green-600' : ''}`}>
-            {formatTime(timerDisplay)}
-          </div>
-          
-          <div className="w-full bg-gray-200 rounded-full h-2 mb-6">
-            <div 
-              className={`h-2 rounded-full transition-all duration-1000 ease-linear ${
-                timerDisplay <= 10 && timerDisplay > 0 ? 'bg-red-500' : 'bg-blue-600'
-              } ${timerDisplay === 0 ? 'bg-green-600' : ''}`}
-              style={{ width: `${(timerDisplay / timerSeconds) * 100}%` }}
-            ></div>
-          </div>
-        </div>
-        
-        <div className="flex justify-center gap-4">
-          <button
-            onClick={() => {
-              setIsTimerRunning(!isTimerRunning);
-            }}
-            className={`px-8 py-4 rounded-xl font-semibold flex items-center gap-2 transition-colors duration-200 shadow-md 
-              ${isTimerRunning 
-                ? 'bg-red-500 text-white hover:bg-red-600' 
-                : 'bg-green-500 text-white hover:bg-green-600'
-            }`}
-          >
-            {isTimerRunning ? <Pause size={24} /> : <Play size={24} />}
-            {isTimerRunning ? '暫停' : '開始'}
-          </button>
-          
-          <button
-            onClick={() => {
-              setIsTimerRunning(false);
-              setTimerDisplay(timerSeconds);
-            }}
-            className="px-8 py-4 bg-gray-500 text-white rounded-xl font-semibold hover:bg-gray-600 transition-colors duration-200 shadow-md flex items-center gap-2"
-          >
-            <RotateCcw size={24} />
-            重置
-          </button>
-        </div>
-        
-        <div className="mt-8">
-          <div className="text-sm text-gray-600 mb-3">快速設定</div>
-          <div className="flex justify-center gap-2 flex-wrap">
-            {[30, 60, 90, 120, 180, 240, 300].map(seconds => (
+        <div className="bg-white rounded-xl shadow-lg p-8 text-center border border-gray-100">
+          {/* 時間設定 */}
+          <div className="mb-8">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              設定休息時間
+            </label>
+            <div className="flex items-center justify-center gap-4">
               <button
-                key={seconds}
                 onClick={() => {
                   if (!isTimerRunning) {
-                    setTimerSeconds(seconds);
-                    setTimerDisplay(seconds);
+                    setTimerSeconds(Math.max(30, timerSeconds - 30));
+                    setTimerDisplay(Math.max(30, timerSeconds - 30));
                   }
                 }}
-                className="px-4 py-2 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={isTimerRunning}
               >
-                {Math.floor(seconds / 60)}:{(seconds % 60).toString().padStart(2, '0')}
+                -30s
               </button>
-            ))}
+              <span className="text-lg font-semibold min-w-20 text-gray-800">
+                {Math.floor(timerSeconds / 60)}:{(timerSeconds % 60).toString().padStart(2, '0')}
+              </span>
+              <button
+                onClick={() => {
+                  if (!isTimerRunning) {
+                    setTimerSeconds(timerSeconds + 30);
+                    setTimerDisplay(timerSeconds + 30);
+                  }
+                }}
+                className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isTimerRunning}
+              >
+                +30s
+              </button>
+            </div>
+          </div>
+          
+          {/* 計時器顯示 */}
+          <div className="mb-8">
+            <div className={`text-6xl font-bold mb-4 transition-colors duration-500 ${
+              timerDisplay <= 10 && timerDisplay > 0 ? 'text-red-500 animate-pulse' : 'text-blue-600'
+            } ${timerDisplay === 0 ? 'text-green-600' : ''}`}>
+              {formatTime(timerDisplay)}
+            </div>
+            
+            <div className="w-full bg-gray-200 rounded-full h-2 mb-6">
+              <div 
+                className={`h-2 rounded-full transition-all duration-1000 ease-linear ${
+                  timerDisplay <= 10 && timerDisplay > 0 ? 'bg-red-500' : 'bg-blue-600'
+                } ${timerDisplay === 0 ? 'bg-green-600' : ''}`}
+                style={{ width: `${(timerDisplay / timerSeconds) * 100}%` }}
+              ></div>
+            </div>
+          </div>
+          
+          {/* 控制按鈕 */}
+          <div className="flex justify-center gap-4">
+            <button
+              onClick={() => {
+                setIsTimerRunning(!isTimerRunning);
+              }}
+              className={`px-8 py-4 rounded-xl font-semibold flex items-center gap-2 transition-colors duration-200 shadow-md 
+                ${isTimerRunning 
+                  ? 'bg-red-500 text-white hover:bg-red-600' 
+                  : 'bg-green-500 text-white hover:bg-green-600'
+              }`}
+            >
+              {isTimerRunning ? <Pause size={24} /> : <Play size={24} />}
+              {isTimerRunning ? '暫停' : '開始'}
+            </button>
+            
+            <button
+              onClick={() => {
+                setIsTimerRunning(false);
+                setTimerDisplay(timerSeconds);
+              }}
+              className="px-8 py-4 bg-gray-500 text-white rounded-xl font-semibold hover:bg-gray-600 transition-colors duration-200 shadow-md flex items-center gap-2"
+            >
+              <RotateCcw size={24} />
+              重置
+            </button>
+          </div>
+          
+          {/* 快速設定按鈕 */}
+          <div className="mt-8">
+            <div className="text-sm text-gray-600 mb-3">快速設定</div>
+            <div className="flex justify-center gap-2 flex-wrap">
+              {[30, 60, 90, 120, 180, 240, 300].map(seconds => (
+                <button
+                  key={seconds}
+                  onClick={() => {
+                    if (!isTimerRunning) {
+                      setTimerSeconds(seconds);
+                      setTimerDisplay(seconds);
+                    }
+                  }}
+                  className="px-4 py-2 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={isTimerRunning}
+                >
+                  {Math.floor(seconds / 60)}:{(seconds % 60).toString().padStart(2, '0')}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <Router> {/* 整個應用程式包裹在 Router 中 */}
@@ -1766,14 +1782,20 @@ const App = () => {
             <Route path="/" element={<DailyWorkout />} />
             <Route path="/exercises" element={<ExercisesPage />} />
             <Route path="/plans" element={<PlansPage />} />
-            <Route path="/progress" element={<ProgressPage />} />
-            <Route path="/timer" element={<TimerPage />} />
+            <Route path="/progress" element={<ProgressPage />} /> {/* 使用修改後的組件名稱 */}
+            <Route path="/timer" element={<TimerPage />} />       {/* 使用修改後的組件名稱 */}
             {/* 可以添加一個 404 頁面，如果需要 */}
             <Route path="*" element={<div className="p-4 text-center text-red-500 text-lg font-bold">404 - 找不到頁面</div>} />
           </Routes>
           
-          {/* 底部導航欄，現在將作為組件呼叫 */}
-          {renderBottomNav()} 
+          {/* 底部導航欄，現在將作為組件呼叫，並傳遞所需的 setter 函數 */}
+          <BottomNav 
+            setEditingPlan={setEditingPlan}
+            setPlanSearchQuery={setPlanSearchQuery}
+            setSelectedCategory={setSelectedCategory}
+            setViewingExerciseDetails={setViewingExerciseDetails}
+            setEditingExercise={setEditingExercise}
+          />
 
           {/* 自定義提示框 */}
           {showAlert && (
